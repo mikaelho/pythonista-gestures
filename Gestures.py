@@ -19,11 +19,14 @@ class Gestures():
 	EDGE_RIGHT = 8
 	EDGE_ALL = 15
 	
-	def __init__(self):
+	def __init__(self, retain_global_reference = True):
 		self.buttons = {}
 		self.views = {}
 		self.recognizers = {}
 		self.actions = {}
+		
+		if retain_global_reference:
+			retain_global(self)
 		
 	def add_tap(self, view, action, number_of_taps_required = None, number_of_touches_required = None):
 		recog = self._get_recog('UITapGestureRecognizer', view, self._general_action, action)
@@ -107,6 +110,12 @@ class Gestures():
 			del self.actions[key]
 		ObjCInstance(view).removeGestureRecognizer_(recognizer)
 		
+	def enable(self, recognizer):
+		ObjCInstance(recognizer).enabled = True
+		
+	def disable(self, recognizer):
+		ObjCInstance(recognizer).enabled = False
+		
 	def remove_all_gestures(self, view):
 		gestures = ObjCInstance(view).gestureRecognizers()
 		for recog in gestures:
@@ -169,16 +178,23 @@ if __name__ == "__main__":
 			self.add_subview(self.tv)
 			self.tv.frame = (0, 0, self.width, self.height)
 			
-			self.gr = Gestures()
+			g = Gestures()
 			
-			self.gr.add_tap(self.tv, self.general_handler)
-			self.gr.add_long_press(self.tv, self.general_handler)
-			# Pan commented out to see swipe working
-			#self.gr.add_pan(self.tv, self.pan_handler)
-			self.gr.add_screen_edge_pan(self.tv, self.pan_handler, edges = Gestures.EDGE_LEFT)
-			self.gr.add_swipe(self.tv, self.general_handler, direction = [Gestures.LEFT, Gestures.RIGHT])
-			self.gr.add_pinch(self.tv, self.pinch_handler)
-			self.gr.add_rotation(self.tv, self.rotation_handler)
+			g.add_tap(self.tv, self.general_handler)
+			
+			g.add_long_press(self.tv, self.general_handler)
+			
+			# Pan disabled to test the function and to see swipe working
+			pan = g.add_pan(self.tv, self.pan_handler)
+			g.disable(pan)
+			
+			g.add_screen_edge_pan(self.tv, self.pan_handler, edges = Gestures.EDGE_LEFT)
+			
+			g.add_swipe(self.tv, self.general_handler, direction = [Gestures.LEFT, Gestures.RIGHT])
+			
+			g.add_pinch(self.tv, self.pinch_handler)
+			
+			g.add_rotation(self.tv, self.rotation_handler)
 			
 		def t(self, msg):
 			self.tv.text = self.tv.text + msg + '\n'
