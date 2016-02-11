@@ -1,3 +1,5 @@
+[Share Code] Gestures for Pythonista
+ 
 This is a convenience class for enabling gestures in Pythonista ui applications, including built-in views. Main intent here has been to make them Python friendly, hiding all the Objective-C stuff.
 
 Get it from [GitHub](https://github.com/mikaelho/pythonista-gestures).
@@ -5,17 +7,16 @@ Get it from [GitHub](https://github.com/mikaelho/pythonista-gestures).
 For example, do something when user swipes left on a TextView:
  
 ```
-def swipe_handler(view, swipe_start_location):
-    print ‘I was swiped, starting from ‘ + str(swipe_start_location)
- 
-tv = ui.TextView()
-gestures = Gestures()
-gestures.add_swipe(tv, swipe_handler, direction = Gestures.LEFT)
+	def swipe_handler(view, swipe_start_location):
+	    print ‘I was swiped, starting from ‘ + str(swipe_start_location)
+	 
+	tv = ui.TextView()
+	Gestures().add_swipe(tv, swipe_handler, direction = Gestures.LEFT)
 ```
  
-These gestures and methods are provided:
+These gestures and methods are included:
 
-*`add_tap(view, action, number_of_taps_required, number_of_touches_required)`
+* `add_tap(view, action, number_of_taps_required, number_of_touches_required)`
 * `add_long_press(view, action, number_of_taps_required, number_of_touches_required, minimum_press_duration, allowable_movement)`
 * `add_pan(view, action, minimum_number_of_touches, maximum_number_of_touches, set_translation)`
 * `add_screen_edge_pan(view, action, edges)` (see below for possible `edges` values)
@@ -48,6 +49,6 @@ You can also remove all gestures from a view with `remove_all_gestures(view)`.
  
 __NOTES__:
  
-* To bridge the Objective-C and Pyyhon worlds, all the gestures depend on the Gestures instance used to create them being live, so retain the reference to it or Pythonista will crash when the gesture is detected.
-* Single Gestures instance can be used to add any number of gestures to any number of views.
-* If you need to create a lot of dynamic gestures in a long-running, make sure to explicitly `remove` them when no longer needed, to avoid a memory leak.
+* To facilitate the gesture handler callbacks from Objective-C to Python, the Gestures instance used to create the gesture must be live. You do not need to manage that as objc_util.retain_global is used to keep a global reference around. If you for some reason must track the reference manually, you can turn this behavior off with a `retain_global_reference=False` parameter for the constructor.
+* Single Gestures instance can be used to add any number of gestures to any number of views, but you can just as well create a new instance whenever and wherever you need to add a new handler.
+* If you need to create millions of dynamic gestures in a long-running app, it can be worthwhile to explicitly `remove` them when no longer needed, to avoid a memory leak.
