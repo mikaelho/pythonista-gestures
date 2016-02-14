@@ -24,10 +24,10 @@ class Gestures():
 		self.views = {}
 		self.recognizers = {}
 		self.actions = {}
-		
 		if retain_global_reference:
 			retain_global(self)
-		
+	
+	@on_main_thread	
 	def add_tap(self, view, action, number_of_taps_required = None, number_of_touches_required = None):
 		recog = self._get_recog('UITapGestureRecognizer', view, self._general_action, action)
 		
@@ -38,6 +38,7 @@ class Gestures():
 			
 		return recog
 	
+	@on_main_thread	
 	def add_long_press(self, view, action, number_of_taps_required = None, number_of_touches_required = None, minimum_press_duration = None, allowable_movement = None):
 		recog = self._get_recog('UILongPressGestureRecognizer', view, self._general_action, action)
 		
@@ -52,6 +53,7 @@ class Gestures():
 			
 		return recog
 
+	@on_main_thread	
 	def add_pan(self, view, action, minimum_number_of_touches = None, maximum_number_of_touches = None, set_translation = None):
 		recog = self._get_recog('UIPanGestureRecognizer', view, self._pan_action, action)
 		
@@ -64,6 +66,7 @@ class Gestures():
 			
 		return recog
 			
+	@on_main_thread	
 	def add_screen_edge_pan(self, view, action, edges = None):
 		recog = self._get_recog('UIScreenEdgePanGestureRecognizer', view, self._pan_action, action)
 		
@@ -72,16 +75,19 @@ class Gestures():
 		
 		return recog
 		
+	@on_main_thread	
 	def add_pinch(self, view, action):
 		recog = self._get_recog('UIPinchGestureRecognizer', view, self._pinch_action, action)
 		
 		return recog
 		
+	@on_main_thread	
 	def add_rotation(self, view, action):
 		recog = self._get_recog('UIRotationGestureRecognizer', view, self._rotation_action, action)
 		
 		return recog
 
+	@on_main_thread	
 	def add_swipe(self, view, action, direction = None, number_of_touches_required = None):		
 		recog = self._get_recog('UISwipeGestureRecognizer', view, self._general_action, action)
 		
@@ -97,6 +103,7 @@ class Gestures():
 			
 		return recog
 			
+	@on_main_thread	
 	def remove(self, view, recognizer):
 		key = None
 		for id in self.recognizers:
@@ -110,12 +117,15 @@ class Gestures():
 			del self.actions[key]
 		ObjCInstance(view).removeGestureRecognizer_(recognizer)
 		
+	@on_main_thread	
 	def enable(self, recognizer):
 		ObjCInstance(recognizer).enabled = True
 		
+	@on_main_thread	
 	def disable(self, recognizer):
 		ObjCInstance(recognizer).enabled = False
 		
+	@on_main_thread	
 	def remove_all_gestures(self, view):
 		gestures = ObjCInstance(view).gestureRecognizers()
 		for recog in gestures:
@@ -177,24 +187,23 @@ if __name__ == "__main__":
 			self.tv = ui.TextView(flex='WH')
 			self.add_subview(self.tv)
 			self.tv.frame = (0, 0, self.width, self.height)
-			
 			g = Gestures()
 			
-			g.add_tap(self.tv, self.general_handler)
+			#g.add_tap(self.tv, self.general_handler)
 			
-			g.add_long_press(self.tv, self.general_handler)
+			#g.add_long_press(self.tv, self.general_handler)
 			
 			# Pan disabled to test the function and to see swipe working
-			pan = g.add_pan(self.tv, self.pan_handler)
-			g.disable(pan)
+			#pan = g.add_pan(self.tv, self.pan_handler)
+			#g.disable(pan)
 			
-			g.add_screen_edge_pan(self.tv, self.pan_handler, edges = Gestures.EDGE_LEFT)
+			#g.add_screen_edge_pan(self.tv, self.pan_handler, edges = Gestures.EDGE_LEFT)
 			
-			g.add_swipe(self.tv, self.general_handler, direction = [Gestures.LEFT, Gestures.RIGHT])
+			g.add_swipe(self.tv, self.general_handler, direction = [Gestures.DOWN])
 			
-			g.add_pinch(self.tv, self.pinch_handler)
+			#g.add_pinch(self.tv, self.pinch_handler)
 			
-			g.add_rotation(self.tv, self.rotation_handler)
+			#g.add_rotation(self.tv, self.rotation_handler)
 			
 		def t(self, msg):
 			self.tv.text = self.tv.text + msg + '\n'
