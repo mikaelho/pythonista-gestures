@@ -7,6 +7,14 @@ import uuid
 
 class Gestures():
 	
+	POSSIBLE = 0
+	BEGAN = 1
+	RECOGNIZED = 1
+	CHANGED = 2
+	ENDED = 3
+	CANCELLED = 4
+	FAILED = 5
+	
 	RIGHT = 1
 	LEFT = 2
 	UP = 4
@@ -144,39 +152,54 @@ class Gestures():
 		ObjCInstance(view).addGestureRecognizer_(recognizer)
 		return recognizer
 	
+	class Data():
+		def __init__(self):
+			self.recognizer = self.view = self.location = self.state = self.number_of_touches = self.scale = self.rotation = self.velocity = None
+	
 	def _context(self, button):
 		key = button.name
-		return (self.views[key], self.recognizers[key], self.actions[key])
+		(view, recog, action) = (self.views[key], self.recognizers[key], self.actions[key])
+		data = Gestures.Data()
+		data.recognizer = recog
+		data.view = view
+		data.location = self._location(view, recog)
+		data.state = recog.state()
+		data.number_of_touches = recog.numberOfTouches()
+		return (data, action)
 		
 	def _location(self, view, recog):
 		loc = recog.locationInView_(ObjCInstance(view))
 		return ui.Point(loc.x, loc.y)
 		
 	def _general_action(self, sender):
-		(view, recog, action) = self._context(sender)
-		location = self._location(view, recog)
-		action(view, location)
+		(data, action) = self._context(sender)
+		action(data)
 		
 	def _pan_action(self, sender):
-		(view, recog, action) = self._context(sender)
-		location = self._location(view, recog)
-		trans = recog.translationInView_(ObjCInstance(view))
-		vel = recog.velocityInView_(ObjCInstance(view))
+		(data, action) = self._context(sender)
 		
-		translation = ui.Point(trans.x, trans.y)
-		velocity = ui.Point(vel.x, vel.y)
+		trans = data.recognizer.translationInView_(ObjCInstance(data.view))
+		vel = data.recognizer.velocityInView_(ObjCInstance(data.view))		
+		data.translation = ui.Point(trans.x, trans.y)
+		data.velocity = ui.Point(vel.x, vel.y)
 		
-		action(view, location, translation, velocity)
+		action(data)
 		
 	def _pinch_action(self, sender):
-		(view, recog, action) = self._context(sender)
-		location = self._location(view, recog)
-		action(view, location, recog.scale(), recog.velocity())
+		(data, action) = self._context(sender)
+		
+		data.scale = data.recognizer.scale()
+		data.velocity = data.recognizer.velocity()
+		
+		action(data)
 		
 	def _rotation_action(self, sender):
-		(view, recog, action) = self._context(sender)
-		location = self._location(view, recog)
-		action(view, location, recog.rotation(), recog.velocity())
+		(data, action) = self._context(sender)
+		
+		data.rotation = data.recognizer.rotation()
+		data.velocity = data.recognizer.velocity()
+		
+		action(data)
 
 # TESTING AND DEMONSTRATION
 
@@ -189,17 +212,17 @@ if __name__ == "__main__":
 			self.tv.frame = (0, 0, self.width, self.height)
 			g = Gestures()
 			
-			#g.add_tap(self.tv, self.general_handler)
+			g.add_tap(self.tv, self.general_handler)
 			
-			#g.add_long_press(self.tv, self.general_handler)
+			g.add_long_press(self.tv, self.general_handler)
 			
 			# Pan disabled to test the function and to see swipe working
-			#pan = g.add_pan(self.tv, self.pan_handler)
+			pan = g.add_pan(self.tv, self.pan_handler)
 			#g.disable(pan)
 			
 			#g.add_screen_edge_pan(self.tv, self.pan_handler, edges = Gestures.EDGE_LEFT)
 			
-			g.add_swipe(self.tv, self.general_handler, direction = [Gestures.DOWN])
+			#g.add_swipe(self.tv, self.general_handler, direction = [Gestures.DOWN])
 			
 			#g.add_pinch(self.tv, self.pinch_handler)
 			
@@ -208,17 +231,17 @@ if __name__ == "__main__":
 		def t(self, msg):
 			self.tv.text = self.tv.text + msg + '\n'
 
-		def general_handler(self, view, start_location):
-			self.t('General: ' + str(start_location))
+		def general_handler(self, data):
+			self.t('General: ' + str(data.location) + ' - state: ' + str(data.state) + ' - touches: ' + str(data.number_of_touches))
 			
-		def pan_handler(self, view, location, translation, velocity):
-			self.t('Pan: ' + str(translation))
+		def pan_handler(self, data):
+			self.t('Pan: ' + str(data.translation) + ' - state: ' + str(data.state))
 			
-		def pinch_handler(self, view, touch_center, scale, velocity):
-			self.t('Pinch: ' + str(scale))
+		def pinch_handler(self, data):
+			self.t('Pinch: ' + str(data.scale) + ' state: ' + str(data.state))
 			
-		def rotation_handler(self, view, touch_center, rotation, velocity):
-			self.t('Rotation: ' + str(rotation))
+		def rotation_handler(self, data):
+			self.t('Rotation: ' + str(data.rotation))
 		
 	view = EventDisplay()
 	view.present()
