@@ -27,14 +27,30 @@ class Gestures():
 	EDGE_RIGHT = 8
 	EDGE_ALL = 15
 	
-	def __init__(self, retain_global_reference = True):
+	def __init__(self, delegate=None, retain_global_reference = True):
 		self.buttons = {}
 		self.views = {}
 		self.recognizers = {}
 		self.actions = {}
+		self.delegate=delegate
 		if retain_global_reference:
 			retain_global(self)
-	
+		def gestureRecognizer_shouldRecognizeSimultaneouslyWithGestureRecognizer_(
+			_self,_sel,gr,othergr):
+			try:
+				should_recog = 					self.delegate.recognizer_should_simultaneously_recognize
+				if callable(should_recog):
+					return should_recog(gr,othergr)
+			except AttributeError:
+				return False
+		self._delegate=create_objc_class('PythonistaGestureRecognizerDelegate',
+		 	superclass=NSObject,
+		 	methods=[gestureRecognizer_shouldRecognizeSimultaneouslyWithGestureRecognizer_],
+		 	classmethods=[], 
+		 	protocols=['UIGestureRecognizerDelegate'], 
+		 	debug=True).new()
+
+			
 	@on_main_thread	
 	def add_tap(self, view, action, number_of_taps_required = None, number_of_touches_required = None):
 		recog = self._get_recog('UITapGestureRecognizer', view, self._general_action, action)
@@ -150,6 +166,7 @@ class Gestures():
 		self.recognizers[key] = recognizer
 		self.actions[key] = final_handler
 		ObjCInstance(view).addGestureRecognizer_(recognizer)
+		recognizer.delegate=self._delegate
 		return recognizer
 	
 	class Data():
@@ -208,23 +225,25 @@ if __name__ == "__main__":
 	class EventDisplay(ui.View):
 		def __init__(self):
 			self.tv = ui.TextView(flex='WH')
+			self.tv.width=50
+			self.tv.height=50
 			self.add_subview(self.tv)
-			self.tv.frame = (0, 0, self.width, self.height)
-			g = Gestures()
+			#self.tv.frame = (0, 0, self.width, self.height)
+			g = Gestures(delegate=self)
+			self.g=g
+			g.add_tap(self, self.general_handler)
 			
-			g.add_tap(self.tv, self.general_handler)
-			
-			g.add_long_press(self.tv, self.general_handler)
+			g.add_long_press(self, self.long_handler)
 			
 			# Pan disabled to test the function and to see swipe working
-			pan = g.add_pan(self.tv, self.pan_handler)
+			pan = g.add_pan(self, self.pan_handler)
 			#g.disable(pan)
 			
 			#g.add_screen_edge_pan(self.tv, self.pan_handler, edges = Gestures.EDGE_LEFT)
 			
 			#g.add_swipe(self.tv, self.general_handler, direction = [Gestures.DOWN])
 			
-			#g.add_pinch(self.tv, self.pinch_handler)
+			g.add_pinch(self, self.pinch_handler)
 			
 			#g.add_rotation(self.tv, self.rotation_handler)
 			
@@ -233,7 +252,8 @@ if __name__ == "__main__":
 
 		def general_handler(self, data):
 			self.t('General: ' + str(data.location) + ' - state: ' + str(data.state) + ' - touches: ' + str(data.number_of_touches))
-			
+		def long_handler(self,data):
+			self.t('long')	
 		def pan_handler(self, data):
 			self.t('Pan: ' + str(data.translation) + ' - state: ' + str(data.state))
 			
@@ -242,6 +262,15 @@ if __name__ == "__main__":
 			
 		def rotation_handler(self, data):
 			self.t('Rotation: ' + str(data.rotation))
-		
+		def recognizer_should_simultaneously_recognize(self,gr,ogr):
+			g=ObjCInstance(gr)
+			o=ObjCInstance(ogr)
+			ispinch=g._get_objc_classname()==b'UIPinchGestureRecognizer'
+			ispan=g._get_objc_classname()==b'UIPanGestureRecognizer'
+			
+			if ispinch or ispan and g.view()==o.view():
+				return True
+			else:
+				return False
 	view = EventDisplay()
-	view.present()
+	view.present('panel')
