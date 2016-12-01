@@ -1,18 +1,22 @@
-[Share Code] Gestures for Pythonista
+# Gestures for Pythonista
  
 This is a convenience class for enabling gestures in Pythonista ui applications, including built-in views. Main intent here has been to make them Python friendly, hiding all the Objective-C stuff.
 
 Get it from [GitHub](https://github.com/mikaelho/pythonista-gestures).
- 
+
+## Example
+
 For example, do something when user swipes left on a TextView:
  
 ```
-	def swipe_handler(view, swipe_start_location):
-	    print ‘I was swiped, starting from ‘ + str(swipe_start_location)
-	 
-	tv = ui.TextView()
-	Gestures().add_swipe(tv, swipe_handler, direction = Gestures.LEFT)
+    def swipe_handler(view, swipe_start_location):
+        print ‘I was swiped, starting from ‘ + str(swipe_start_location)
+     
+    tv = ui.TextView()
+    Gestures().add_swipe(tv, swipe_handler, direction = Gestures.LEFT)
 ```
+ 
+## Gestures
  
 These gestures and methods are included:
 
@@ -46,8 +50,24 @@ All of the `add_x` methods return a `recognizer` object that can be used to remo
 * `enable(recognizer)`
  
 You can also remove all gestures from a view with `remove_all_gestures(view)`.
+
+## Fine-tuning gesture recognition
+
+If you need to control which hestires are recognized in which sitiation, you can override some methods.
+
+For example, by default only one gesture recognizer will be successful, but if you want to enable both zooming (pinch) and panning at the same time, allow both recognizers:
+
+    g = Gestures()
+    
+    g.recognize_simultaneously = lambda gr, other_gr: gr == Gestures.PAN and other_gr == Gestures.PINCH
+    
+The other methods you can override are `fail` and `fail_other`, corresponding to the other [UIGestureRecognizerDelegate](https://developer.apple.com/reference/uikit/uigesturerecognizerdelegate?language=objc) methods.
+    
+All regular recognizers have convenience names that you can use like in the example above: `TAP`, `PINCH`, `ROTATION`, `SWIPE`, `PAN`, `SCREEN_EDGE_PAN`, `LONG_PRESS`.
+
+If you need even finer control and are not afraid to import `objc_util`, check the `objc_*_default` methods in the code.
  
-__NOTES__:
+## Notes
  
 * To facilitate the gesture handler callbacks from Objective-C to Python, the Gestures instance used to create the gesture must be live. You do not need to manage that as objc_util.retain_global is used to keep a global reference around. If you for some reason must track the reference manually, you can turn this behavior off with a `retain_global_reference=False` parameter for the constructor.
 * Single Gestures instance can be used to add any number of gestures to any number of views, but you can just as well create a new instance whenever and wherever you need to add a new handler.
