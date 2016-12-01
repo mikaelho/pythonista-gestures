@@ -53,7 +53,7 @@ You can also remove all gestures from a view with `remove_all_gestures(view)`.
 
 ## Fine-tuning gesture recognition
 
-If you need to control which hestires are recognized in which sitiation, you can override some methods.
+If you need to control which gestures are recognized in which situation, you can override some methods.
 
 For example, by default only one gesture recognizer will be successful, but if you want to enable both zooming (pinch) and panning at the same time, allow both recognizers:
 
@@ -64,6 +64,8 @@ For example, by default only one gesture recognizer will be successful, but if y
 The other methods you can override are `fail` and `fail_other`, corresponding to the other [UIGestureRecognizerDelegate](https://developer.apple.com/reference/uikit/uigesturerecognizerdelegate?language=objc) methods.
     
 All regular recognizers have convenience names that you can use like in the example above: `TAP`, `PINCH`, `ROTATION`, `SWIPE`, `PAN`, `SCREEN_EDGE_PAN`, `LONG_PRESS`.
+
+If you need to set these per gesture, instantiate separate `Gestures` objects.
 
 If you need even finer control and are not afraid to import `objc_util`, check the `objc_*_default` methods in the code.
  
