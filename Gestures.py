@@ -50,7 +50,6 @@ class Gestures():
     self.recognize_simultaneously = recognize_simultaneously_default
     
     def fail_default(gr_name, other_gr_name):
-      print (gr_name, other_gr_name)
       return False    
     self.fail = fail_default
     
@@ -291,42 +290,43 @@ if __name__ == "__main__":
       self.tv = ui.TextView(flex='WH')
       self.add_subview(self.tv)
       self.tv.frame = (0, 0, self.width, self.height)
+      
       g = Gestures()
       
       g.recognize_simultaneously = lambda gr, other_gr: gr == Gestures.PAN and other_gr == Gestures.PINCH
-      
+        
       g.fail_other = lambda gr, other_gr: other_gr == Gestures.PINCH
-
+  
       g.add_tap(self, self.general_handler)
-
+  
       g.add_long_press(self.tv, self.long_press_handler)
-
+  
       pan = g.add_pan(self, self.pan_handler)
-
+  
       #g.add_screen_edge_pan(self.tv, self.pan_handler, edges = Gestures.EDGE_LEFT)
-
+  
       #g.add_swipe(self.tv, self.general_handler, direction = [Gestures.DOWN])
-
+  
       g.add_pinch(self, self.pinch_handler)
-
+  
       #g.add_rotation(self.tv, self.rotation_handler)
-
+  
     def t(self, msg):
       self.tv.text = self.tv.text + msg + '\n'
-
+  
     def general_handler(self, data):
       self.t('General: ' + str(data.location) + ' - state: ' + str(data.state) + ' - touches: ' + str(data.number_of_touches))
-
+  
     def long_press_handler(self, data):
       if data.state == Gestures.ENDED:
         self.t('Long press: ' + str(data.location) + ' - state: ' + str(data.state) + ' - touches: ' + str(data.number_of_touches))
-
+  
     def pan_handler(self, data):
       self.t('Pan: ' + str(data.translation) + ' - state: ' + str(data.state))
-
+  
     def pinch_handler(self, data):
       self.t('Pinch: ' + str(data.scale) + ' state: ' + str(data.state))
-
+  
     def rotation_handler(self, data):
       self.t('Rotation: ' + str(data.rotation))
 
