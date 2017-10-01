@@ -1,4 +1,18 @@
 # coding: utf-8
+
+'''
+
+All gesture handlers get the following attributes in the `data` argument:
+  
+* `recognizer` - (ObjC) recognizer object
+* `view` - (Pythonista) view that captured the object
+* `location` - Location of the gesture as a `ui.Point` with `x` and `y` attributes
+* `state` - State of gesture recognition; one of `Gestures.POSSIBLE/BEGAN/RECOGNIZED/CHANGED/ENDED/CANCELLED/FAILED`
+* `number_of_touches` - Number of touches recognized
+
+See the documentation for the `add_` methods to see if more gesture-specific information is included.
+'''
+
 import ui
 from objc_util import *
 import uuid
@@ -116,6 +130,13 @@ class Gestures():
 
   @on_main_thread
   def add_tap(self, view, action, number_of_taps_required = None, number_of_touches_required = None):
+    ''' Call `action` when a tap gesture is recognized for the `view`.
+    
+    Additional parameters:
+      
+    * `number_of_taps_required` - Set if more than one tap is required for the gesture to be recognized.
+    * `number_of_touches_required` - Set if more than one finger is required for the gesture to be recognized.
+    '''
     recog = self._get_recog('UITapGestureRecognizer', view, self._general_action, action)
 
     if number_of_taps_required:
@@ -127,6 +148,15 @@ class Gestures():
 
   @on_main_thread
   def add_long_press(self, view, action, number_of_taps_required = None, number_of_touches_required = None, minimum_press_duration = None, allowable_movement = None):
+    ''' Call `action` when a long press gesture is recognized for the `view`.
+    
+    Additional parameters:
+      
+    * `number_of_taps_required` - Set if more than one tap is required for the gesture to be recognized.
+    * `number_of_touches_required` - Set if more than one finger is required for the gesture to be recognized.
+    * `minimum_press_duration` - Set to change the default 0.5 second recognition treshold.
+    * `allowable_movement` - Set to change the default 10 point maximum distance allowed for the gesture to be recognized.
+    '''
     recog = self._get_recog('UILongPressGestureRecognizer', view, self._general_action, action)
 
     if number_of_taps_required:
@@ -141,41 +171,77 @@ class Gestures():
     return recog
 
   @on_main_thread
-  def add_pan(self, view, action, minimum_number_of_touches = None, maximum_number_of_touches = None, set_translation = None):
+  def add_pan(self, view, action, minimum_number_of_touches = None, maximum_number_of_touches = None):
+    ''' Call `action` when a pan gesture is recognized for the `view`.
+    
+    Additional parameters:
+      
+    * `minimum_number_of_touches` - Set to control the gesture recognition.
+    * `maximum_number_of_touches` - Set to control the gesture recognition.
+    
+    Handler `action` receives the following gesture-specific attributes in the `data` argument:
+      
+    * `translation` - Translation from the starting point of the gesture as a `ui.Point` with `x` and `y` attributes.
+    * `velocity` - Current velocity of the pan gesture as points per second (a `ui.Point` with `x` and `y` attributes).
+    '''
     recog = self._get_recog('UIPanGestureRecognizer', view, self._pan_action, action)
 
     if minimum_number_of_touches:
       recog.minimumNumberOfTouches = minimum_number_of_touches
     if maximum_number_of_touches:
       recog.maximumNumberOfTouches = maximum_number_of_touches
-    if set_translation:
-      recog.set_translation_(CGPoint(set_translation.x, set_translation.y), ObjCInstance(view))
 
     return recog
 
   @on_main_thread
-  def add_screen_edge_pan(self, view, action, edges = None):
+  def add_screen_edge_pan(self, view, action, edges):
+    ''' Call `action` when a pan gesture starting from the edge is recognized for the `view`. `edges` must be set to one of `Gestures.EDGE_NONE/EDGE_TOP/EDGE_LEFT/EDGE_BOTTOM/EDGE_RIGHT/EDGE_ALL`. If you want to recognize pans from different edges, you have to set up separate recognizers with separate calls to this method.
+    
+    Handler `action` receives the same gesture-specific attributes in the `data` argument as pan gestures, see `add_pan`.
+    '''
     recog = self._get_recog('UIScreenEdgePanGestureRecognizer', view, self._pan_action, action)
 
-    if edges:
-      recog.edges = edges
+    recog.edges = edges
 
     return recog
 
   @on_main_thread
   def add_pinch(self, view, action):
+    ''' Call `action` when a pinch gesture is recognized for the `view`.
+    
+    Handler `action` receives the following gesture-specific attributes in the `data` argument:
+    
+    * `scale` - Relative to the distance of the fingers as opposed to when the touch first started.
+    * `velocity` - Current velocity of the pinch gesture as scale per second.
+    '''
     recog = self._get_recog('UIPinchGestureRecognizer', view, self._pinch_action, action)
 
     return recog
 
   @on_main_thread
   def add_rotation(self, view, action):
+    ''' Call `action` when a rotation gesture is recognized for the `view`.
+    
+    Handler `action` receives the following gesture-specific attributes in the `data` argument:
+    
+    * `rotation` - Rotation in radians, relative to the position of the fingers when the touch first started.
+    * `velocity` - Current velocity of the rotation gesture as radians per second.
+    '''
     recog = self._get_recog('UIRotationGestureRecognizer', view, self._rotation_action, action)
 
     return recog
 
   @on_main_thread
   def add_swipe(self, view, action, direction = None, number_of_touches_required = None):
+    ''' Call `action` when a swipe gesture is recognized for the `view`.
+    
+    Additional parameters:
+      
+    * `direction` - Direction of the swipe to be recognized. Either one of `Gestures.RIGHT/LEFT/UP/DOWN`, or a list of multiple directions.
+    * `number_of_touches_required` - Set if you need to change the minimum number of touches required.
+    
+    If swipes to multiple directions are to be recognized, the handler does not receive any indication of the direction of the swipe. Add multiple recognizers if you need to differentiate between the directions.
+    '''
     recog = self._get_recog('UISwipeGestureRecognizer', view, self._general_action, action)
 
     if direction:
