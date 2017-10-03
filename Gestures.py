@@ -1,8 +1,23 @@
 # coding: utf-8
 
 '''
+# Gestures for Pythonista
+ 
+This is a convenience class for enabling gestures in Pythonista ui applications, including built-in views. Main intent here has been to make them Python friendly, hiding all the Objective-C stuff.
 
-All gesture handlers get the following attributes in the `data` argument:
+Get it from [GitHub](https://github.com/mikaelho/pythonista-gestures).
+
+## Example
+
+For example, do something when user swipes left on a TextView:
+ 
+    def swipe_handler(view, data):
+        print ‘I was swiped, starting from ‘ + str(data.location)
+     
+    tv = ui.TextView()
+    Gestures().add_swipe(tv, swipe_handler, direction = Gestures.LEFT)
+
+Your handler method gets two arguments, the `view` that received the gesture, and a `data` argument always contains the attributes described below. Individual gestures may provide more information; see the API documentation for the `add_` methods.
   
 * `recognizer` - (ObjC) recognizer object
 * `view` - (Pythonista) view that captured the object
@@ -10,7 +25,29 @@ All gesture handlers get the following attributes in the `data` argument:
 * `state` - State of gesture recognition; one of `Gestures.POSSIBLE/BEGAN/RECOGNIZED/CHANGED/ENDED/CANCELLED/FAILED`
 * `number_of_touches` - Number of touches recognized
 
-See the documentation for the `add_` methods to see if more gesture-specific information is included.
+All of the `add_x` methods return a `recognizer` object that can be used to remove or disable the gesture as needed, see the API. You can also remove all gestures from a view with `remove_all_gestures(view)`.
+
+#docgen-toc
+
+## Fine-tuning gesture recognition
+
+By default only one gesture recognizer will be successful, but if you want to, for example, enable both zooming (pinch) and panning at the same time, allow both recognizers:
+
+    g = Gestures()
+    
+    g.recognize_simultaneously = lambda gr, other_gr: gr == Gestures.PAN and other_gr == Gestures.PINCH
+    
+The other methods you can override are `fail` and `fail_other`, corresponding to the other [UIGestureRecognizerDelegate](https://developer.apple.com/reference/uikit/uigesturerecognizerdelegate?language=objc) methods.
+    
+All regular recognizers have convenience names that you can use like in the example above: `Gestures.TAP/PINCH/ROTATION/SWIPE/PAN/SCREEN_EDGE_PAN/LONG_PRESS`.
+
+If you need to set these per gesture, instantiate separate `Gestures` objects.
+
+## Notes
+ 
+* To facilitate the gesture handler callbacks from Objective-C to Python, the Gestures instance used to create the gesture must be live. You do not need to manage that as objc_util.retain_global is used to keep a global reference around. If you for some reason must track the reference manually, you can turn this behavior off with a `retain_global_reference=False` parameter for the constructor.
+* Single Gestures instance can be used to add any number of gestures to any number of views, but you can just as well create a new instance whenever and wherever you need to add a new handler.
+* If you need to create millions of dynamic gestures in a long-running app, it can be worthwhile to explicitly `remove` them when no longer needed, to avoid a memory leak.
 '''
 
 import ui
@@ -240,7 +277,7 @@ class Gestures():
     * `direction` - Direction of the swipe to be recognized. Either one of `Gestures.RIGHT/LEFT/UP/DOWN`, or a list of multiple directions.
     * `number_of_touches_required` - Set if you need to change the minimum number of touches required.
     
-    If swipes to multiple directions are to be recognized, the handler does not receive any indication of the direction of the swipe. Add multiple recognizers if you need to differentiate between the directions.
+    If swipes to multiple directions are to be recognized, the handler does not receive any indication of the direction of the swipe. Add multiple recognizers if you need to differentiate between the directions. 
     '''
     recog = self._get_recog('UISwipeGestureRecognizer', view, self._general_action, action)
 
@@ -257,7 +294,18 @@ class Gestures():
     return recog
 
   @on_main_thread
+  def disable(self, recognizer):
+    ''' Disable a recognizer temporarily. '''
+    ObjCInstance(recognizer).enabled = False
+
+  @on_main_thread
+  def enable(self, recognizer):
+    ''' Enable a disabled gesture recognizer. There is no error if the recognizer is already enabled. '''
+    ObjCInstance(recognizer).enabled = True
+
+  @on_main_thread
   def remove(self, view, recognizer):
+    ''' Remove the recognizer from the view permanently. '''
     key = None
     for id in self.recognizers:
       if self.recognizers[id] == recognizer:
@@ -271,15 +319,8 @@ class Gestures():
     ObjCInstance(view).removeGestureRecognizer_(recognizer)
 
   @on_main_thread
-  def enable(self, recognizer):
-    ObjCInstance(recognizer).enabled = True
-
-  @on_main_thread
-  def disable(self, recognizer):
-    ObjCInstance(recognizer).enabled = False
-
-  @on_main_thread
   def remove_all_gestures(self, view):
+    ''' Remove all gesture recognizers from a view. '''
     gestures = ObjCInstance(view).gestureRecognizers()
     for recog in gestures:
       self.remove(view, recog)
@@ -353,7 +394,7 @@ if __name__ == "__main__":
 
   class EventDisplay(ui.View):
     def __init__(self):
-      self.tv = ui.TextView(flex='WH')
+      self.tv = ui.TextView(flex='WH', editable=False)
       self.add_subview(self.tv)
       self.tv.frame = (0, 0, self.width, self.height)
       
@@ -373,9 +414,9 @@ if __name__ == "__main__":
   
       #g.add_swipe(self.tv, self.general_handler, direction = [Gestures.DOWN])
   
-      g.add_pinch(self, self.pinch_handler)
+      #g.add_pinch(self, self.pinch_handler)
   
-      #g.add_rotation(self.tv, self.rotation_handler)
+      g.add_rotation(self.tv, self.rotation_handler)
   
     def t(self, msg):
       self.tv.text = self.tv.text + msg + '\n'
