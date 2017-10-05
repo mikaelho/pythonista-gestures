@@ -1,6 +1,10 @@
 # Gestures for Pythonista
  
-This is a convenience class for enabling gestures in Pythonista ui applications, including built-in views. Main intent here has been to make them Python friendly, hiding all the Objective-C stuff. All gestures correspond to the standard Apple gestures, except for the custom force press gesture.
+This is a convenience class for enabling gestures in Pythonista UI applications, including built-in views. Main intent here has been to make them Python friendly, hiding all the Objective-C stuff. All gestures correspond to the standard Apple gestures, except for the custom force press gesture.
+
+Run the file on its own to see a demo of the supported gestures.
+
+![Demo image](https://raw.githubusercontent.com/mikaelho/pythonista-gestures/master/gestures.jpg)
 
 Get it from [GitHub](https://github.com/mikaelho/pythonista-gestures).
 
@@ -21,6 +25,8 @@ Your handler method gets one `data` argument that always contains the attributes
 * `location` - Location of the gesture as a `ui.Point` with `x` and `y` attributes
 * `state` - State of gesture recognition; one of `Gestures.POSSIBLE/BEGAN/RECOGNIZED/CHANGED/ENDED/CANCELLED/FAILED`
 * `number_of_touches` - Number of touches recognized
+
+For continuous gestures, check for `data.state == Gestures.ENDED` in the handler if you are just interested that a pinch or a force press happened.
 
 All of the `add_x` methods return a `recognizer` object that can be used to remove or disable the gesture as needed, see the API. You can also remove all gestures from a view with `remove_all_gestures(view)`.
 
@@ -46,7 +52,7 @@ All of the `add_x` methods return a `recognizer` object that can be used to remo
 
 #### ` add_long_press(self, view, action, number_of_taps_required = None, number_of_touches_required = None, minimum_press_duration = None, allowable_movement = None)`
 
-  Call `action` when a long press gesture is recognized for the `view`.
+  Call `action` when a long press gesture is recognized for the `view`. Note that this is a continuous gesture; you might want to check for `data.state == Gestures.CHANGED` or `ENDED` to get the desired results.
   
   Additional parameters:
     
@@ -57,7 +63,7 @@ All of the `add_x` methods return a `recognizer` object that can be used to remo
 
 #### ` add_pan(self, view, action, minimum_number_of_touches = None, maximum_number_of_touches = None)`
 
-  Call `action` when a pan gesture is recognized for the `view`.
+  Call `action` when a pan gesture is recognized for the `view`. This is a continuous gesture.
   
   Additional parameters:
     
@@ -71,13 +77,15 @@ All of the `add_x` methods return a `recognizer` object that can be used to remo
 
 #### ` add_screen_edge_pan(self, view, action, edges)`
 
-  Call `action` when a pan gesture starting from the edge is recognized for the `view`. `edges` must be set to one of `Gestures.EDGE_NONE/EDGE_TOP/EDGE_LEFT/EDGE_BOTTOM/EDGE_RIGHT/EDGE_ALL`. If you want to recognize pans from different edges, you have to set up separate recognizers with separate calls to this method.
+  Call `action` when a pan gesture starting from the edge is recognized for the `view`. This is a continuous gesture.
+  
+  `edges` must be set to one of `Gestures.EDGE_NONE/EDGE_TOP/EDGE_LEFT/EDGE_BOTTOM/EDGE_RIGHT/EDGE_ALL`. If you want to recognize pans from different edges, you have to set up separate recognizers with separate calls to this method.
   
   Handler `action` receives the same gesture-specific attributes in the `data` argument as pan gestures, see `add_pan`.
 
 #### ` add_pinch(self, view, action)`
 
-  Call `action` when a pinch gesture is recognized for the `view`.
+  Call `action` when a pinch gesture is recognized for the `view`. This is a continuous gesture.
   
   Handler `action` receives the following gesture-specific attributes in the `data` argument:
   
@@ -86,7 +94,7 @@ All of the `add_x` methods return a `recognizer` object that can be used to remo
 
 #### ` add_rotation(self, view, action)`
 
-  Call `action` when a rotation gesture is recognized for the `view`.
+  Call `action` when a rotation gesture is recognized for the `view`. This is a continuous gesture.
   
   Handler `action` receives the following gesture-specific attributes in the `data` argument:
   
@@ -106,7 +114,7 @@ All of the `add_x` methods return a `recognizer` object that can be used to remo
 
 #### ` add_force_press(self, view, action, threshold=0.4)`
 
-  Call `action` when a force press gesture is recognized for the `view`.
+  Call `action` when a force press gesture is recognized for the `view`. This is a continuous gesture.
   
   Additional parameters:
     
@@ -149,7 +157,8 @@ If you need to set these per gesture, instantiate separate `Gestures` objects.
 
 ## Notes
  
-* Adding a gesture to a view automatically sets `touch_enabled=True` for that view, to avoid counter-intuitive situations where adding a gesture recognizer to ui.Label produces no results.
+* Adding a gesture to a view automatically sets `touch_enabled=True` for that view, to avoid counter-intuitive situations where adding a gesture recognizer to e.g. ui.Label produces no results.
+* It can be hard to add gestures to ui.ScrollView, ui.TextView and the like, because they have complex multi-view structures and gestures already in place.
 * To facilitate the gesture handler callbacks from Objective-C to Python, the Gestures instance used to create the gesture must be live. You do not need to manage that as objc_util.retain_global is used to keep a global reference around. If you for some reason must track the reference manually, you can turn this behavior off with a `retain_global_reference=False` parameter for the constructor.
 * Single Gestures instance can be used to add any number of gestures to any number of views, but you can just as well create a new instance whenever and wherever you need to add a new handler.
 * If you need to create millions of dynamic gestures in a long-running app, it can be worthwhile to explicitly `remove` them when no longer needed, to avoid a memory leak.
