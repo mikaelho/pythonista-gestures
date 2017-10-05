@@ -11,19 +11,24 @@ Get it from [GitHub](https://github.com/mikaelho/pythonista-gestures).
 
 For example, do something when user swipes left on a TextView:
  
-    def swipe_handler(view, data):
+    def swipe_handler(data):
         print ‘I was swiped, starting from ‘ + str(data.location)
      
     tv = ui.TextView()
     Gestures().add_swipe(tv, swipe_handler, direction = Gestures.LEFT)
 
-Your handler method gets two arguments, the `view` that received the gesture, and a `data` argument always contains the attributes described below. Individual gestures may provide more information; see the API documentation for the `add_` methods.
+Your handler method gets one `data` argument that always contains the attributes described below. Individual gestures may provide more information; see the API documentation for the `add_` methods.
   
 * `recognizer` - (ObjC) recognizer object
 * `view` - (Pythonista) view that captured the object
 * `location` - Location of the gesture as a `ui.Point` with `x` and `y` attributes
 * `state` - State of gesture recognition; one of `Gestures.POSSIBLE/BEGAN/RECOGNIZED/CHANGED/ENDED/CANCELLED/FAILED`
 * `number_of_touches` - Number of touches recognized
+* `additional_touch_data` - Object with the attributes below. This data comes from the latest touch that was part of the gesture, and probably only makes sense in the `CHANGED` phase of a continuous single-touch gesture:
+  * `force`
+  * `maximum_possible_force`
+  * `altitude_angle`
+  * `azimuth_unit_vector`
 
 All of the `add_x` methods return a `recognizer` object that can be used to remove or disable the gesture as needed, see the API. You can also remove all gestures from a view with `remove_all_gestures(view)`.
 
@@ -45,6 +50,7 @@ If you need to set these per gesture, instantiate separate `Gestures` objects.
 
 ## Notes
  
+* Adding a gesture to a view automatically sets `touch_enabled=True` for that view, to avoid counter-intuitive situations where adding a gesture recognizer to ui.Label produces no results.
 * To facilitate the gesture handler callbacks from Objective-C to Python, the Gestures instance used to create the gesture must be live. You do not need to manage that as objc_util.retain_global is used to keep a global reference around. If you for some reason must track the reference manually, you can turn this behavior off with a `retain_global_reference=False` parameter for the constructor.
 * Single Gestures instance can be used to add any number of gestures to any number of views, but you can just as well create a new instance whenever and wherever you need to add a new handler.
 * If you need to create millions of dynamic gestures in a long-running app, it can be worthwhile to explicitly `remove` them when no longer needed, to avoid a memory leak.
@@ -52,11 +58,18 @@ If you need to set these per gesture, instantiate separate `Gestures` objects.
 
 import ui
 from objc_util import *
+
 import uuid
+from types import SimpleNamespace
 
 # https://developer.apple.com/library/prerelease/ios/documentation/UIKit/Reference/UIGestureRecognizer_Class/index.html#//apple_ref/occ/cl/UIGestureRecognizer
 
 class Gestures():
+
+  TYPE_REGULAR = 0
+  TYPE_FORCE = 1
+  TYPE_STYLUS = 4
+  TYPE_ANY = 8
 
   TAP = b'UITapGestureRecognizer'
   PINCH = b'UIPinchGestureRecognizer'
@@ -86,13 +99,51 @@ class Gestures():
   EDGE_RIGHT = 8
   EDGE_ALL = 15
 
-  def __init__(self, retain_global_reference = True):
+  manager_lookup = {}
+
+  def __init__(self, touch_type=TYPE_REGULAR, force_threshold=0.4, retain_global_reference = True):
     self.buttons = {}
     self.views = {}
     self.recognizers = {}
     self.actions = {}
+    self.touches = {}
+    self.touch_type = touch_type
+    self.force_threshold = force_threshold
     if retain_global_reference:
       retain_global(self)
+
+    # Controls which touches get passed to gesture recognizers. Used mainly to filter force touch.
+    def gestureRecognizer_shouldReceiveTouch_(_self, _sel, gr, touch):
+      python_gr = ObjCInstance(gr)
+      manager = Gestures.manager_lookup[python_gr]
+
+      t = ObjCInstance(touch)
+      print(t.force())
+      return True
+      objc_vector = t.azimuthUnitVectorInView_(None)
+      manager.touches[python_gr] = SimpleNamespace(
+        force=t.force(), maximum_possible_force=t.maximumPossibleForce(),
+        altitude_angle=t.altitudeAngle(),
+        azimuth_unit_vector=(objc_vector.dx, objc_vector.dy)
+      )
+      
+      f = t.force()/t.maximumPossibleForce()
+      print(f, t.force(), t.maximumPossibleForce())
+      is_force = f > manager.force_threshold
+      is_stylus = t.type() == 2
+      is_touch = not is_force and not is_stylus
+      #print (gr, self.touch_type, is_force, is_stylus, is_touch)
+      
+      if manager.touch_type == Gestures.TYPE_ANY:
+        return True
+      if manager.touch_type == Gestures.TYPE_STYLUS and is_stylus:
+        return True
+      if manager.touch_type == Gestures.TYPE_FORCE and is_force:
+        return True
+      if self.touch_type == Gestures.TYPE_REGULAR and is_touch:
+        return True
+        
+      return False     
 
     # Friendly delegate functions
 
@@ -152,18 +203,19 @@ class Gestures():
     # Delegate
     
     try:
-      PythonGestureDelegate = ObjCClass('PythonGestureDelegate')
+      PythonistaGestureDelegate = ObjCClass('PythonistaGestureDelegate')
     except:
-      PythonGestureDelegate = create_objc_class('PythonistaGestureDelegate',
+      PythonistaGestureDelegate = create_objc_class('PythonistaGestureDelegate',
       superclass=NSObject,
       methods=[
+        #gestureRecognizer_shouldReceiveTouch_,
         gestureRecognizer_shouldRecognizeSimultaneouslyWithGestureRecognizer_,
         gestureRecognizer_shouldRequireFailureOfGestureRecognizer_,
         gestureRecognizer_shouldBeRequiredToFailByGestureRecognizer_],
       classmethods=[],
       protocols=['UIGestureRecognizerDelegate'],
       debug=True)
-    self._delegate = PythonGestureDelegate.new()
+    self._delegate = PythonistaGestureDelegate.new()
 
   @on_main_thread
   def add_tap(self, view, action, number_of_taps_required = None, number_of_touches_required = None):
@@ -326,6 +378,7 @@ class Gestures():
       self.remove(view, recog)
 
   def _get_recog(self, recog_name, view, internal_action, final_handler):
+    view.touch_enabled = True
     button = ui.Button()
     key = str(uuid.uuid4())
     button.name = key
@@ -334,6 +387,7 @@ class Gestures():
     self.views[key] = view
     recognizer = ObjCClass(recog_name).alloc().initWithTarget_action_(button, sel('invokeAction:')).autorelease()
     self.recognizers[key] = recognizer
+    Gestures.manager_lookup[recognizer] = self
     self.actions[key] = final_handler
     ObjCInstance(view).addGestureRecognizer_(recognizer)
     recognizer.delegate = self._delegate
@@ -346,13 +400,19 @@ class Gestures():
   def _context(self, button):
     key = button.name
     (view, recog, action) = (self.views[key], self.recognizers[key], self.actions[key])
+    if not self._validate(recog):
+      return (None, None)
     data = Gestures.Data()
     data.recognizer = recog
     data.view = view
     data.location = self._location(view, recog)
     data.state = recog.state()
     data.number_of_touches = recog.numberOfTouches()
+    #data.additional_touch_data = self.touches[recog]
     return (data, action)
+    
+  def _validate(self, recognizer):
+    return True
 
   def _location(self, view, recog):
     loc = recog.locationInView_(ObjCInstance(view))
@@ -360,11 +420,12 @@ class Gestures():
 
   def _general_action(self, sender):
     (data, action) = self._context(sender)
+    if not data: return
     action(data)
 
   def _pan_action(self, sender):
     (data, action) = self._context(sender)
-
+    if not data: return
     trans = data.recognizer.translationInView_(ObjCInstance(data.view))
     vel = data.recognizer.velocityInView_(ObjCInstance(data.view))
     data.translation = ui.Point(trans.x, trans.y)
@@ -374,7 +435,7 @@ class Gestures():
 
   def _pinch_action(self, sender):
     (data, action) = self._context(sender)
-
+    if not data: return
     data.scale = data.recognizer.scale()
     data.velocity = data.recognizer.velocity()
 
@@ -382,15 +443,157 @@ class Gestures():
 
   def _rotation_action(self, sender):
     (data, action) = self._context(sender)
-
+    if not data: return
     data.rotation = data.recognizer.rotation()
     data.velocity = data.recognizer.velocity()
 
     action(data)
+    
+    
+class ForceGestures(Gestures):
+  
+  def _validate(self, recognizer):
+    for touch in recognizer.touches():
+      if touch.force()/touch.maximumPossibleForce() > 0.4:
+        return True
+    return False
+  
+class StylusGestures(Gestures):
+  
+  def _validate(self, recognizer):
+    for touch in recognizer.touches():
+      if touch.type() == 2: # Stylus
+        return True
+    return False
 
 # TESTING AND DEMONSTRATION
 
 if __name__ == "__main__":
+  
+  import math, random
+  
+  g = Gestures()
+  g_force = ForceGestures()
+  
+  def random_background(view):
+    colors = ['#0b6623', '#9dc183', '#3f704d', '#8F9779', '#4F7942', '#A9BA9D', '#D0F0C0', '#043927', '#679267', '#2E8B57']
+    view.background_color = random.choice(colors)
+    view.text_color = 'black' if sum(view.background_color[:3]) > 1.5 else 'white'
+
+  def update_text(l, text):
+    l.text = '\n'.join([l.text.splitlines()[0]] + [text])
+
+  def generic_handler(data):
+    update_text(data.view, 'State: ' + str(data.state) + ' Touches: ' + str(data.number_of_touches))
+    random_background(data.view)
+    
+  def pan_handler(data):
+    update_text(data.view, 'Translation: ' + str(data.translation) + ' Velocity: ' + str(data.velocity))
+    random_background(data.view)
+    
+  def pinch_handler(data):
+    random_background(data.view)
+    update_text(data.view, 'Scale: ' + str(round(data.scale, 6)))
+    
+  def pan_or_pinch_handler(data):
+    random_background(data.view)
+    if hasattr(data, 'translation'):
+      update_text(data.view, 'Pan')
+    elif hasattr(data, 'scale'):
+      update_text(data.view, 'Pinch')
+    else:
+      update_text(data.view, 'Something else')
+      
+  def pan_or_swipe_handler(data):
+    random_background(data.view)
+    if hasattr(data, 'translation'):
+      update_text(data.view, 'Pan')
+    else:
+      update_text(data.view, 'Swipe')
+      
+  def force_handler(data):
+    random_background(data.view)
+  
+  bg = ui.View()
+  bg.present()
+  
+  edge_l = ui.Label(
+    text='Edge pan (from right)', 
+    background_color='grey',
+    text_color='white',
+    alignment=ui.ALIGN_CENTER,
+    number_of_lines=0,
+    frame=(
+      0, 0, bg.width, 100
+  ))
+  bg.add_subview(edge_l)
+  g.add_screen_edge_pan(edge_l, pan_handler, edges=Gestures.EDGE_RIGHT)
+
+  v = ui.ScrollView(frame=(0, 110, bg.width, bg.height-110))
+  bg.add_subview(v)
+  
+  label_count = -1
+  
+  def create_label(title):
+    global label_count
+    label_count += 1
+    label_w = 175
+    label_h = 100
+    gap = 10
+    label_w_with_gap = label_w + gap
+    label_h_with_gap = label_h + gap
+    labels_per_line = math.floor((v.width-2*gap)/(label_w+gap))
+    left_margin = (v.width - labels_per_line*label_w_with_gap + gap)/2
+    line = math.floor(label_count/labels_per_line)
+    column = label_count - line*labels_per_line
+    
+    l = ui.Label(
+      text=title, 
+      background_color='grey',
+      text_color='white',
+      alignment=ui.ALIGN_CENTER,
+      number_of_lines=0,
+      frame=(
+        left_margin+column * label_w_with_gap,
+        gap+line * label_h_with_gap,
+        label_w, label_h
+    ))
+    v.add_subview(l)
+    return l
+
+  tap_l = create_label('Tap')
+  g.add_tap(tap_l, generic_handler)
+  
+  tap_2_l = create_label('2-finger tap')
+  g.add_tap(tap_2_l, generic_handler, number_of_touches_required=2)
+  
+  doubletap_l = create_label('Doubletap')
+  g.add_tap(doubletap_l, generic_handler, number_of_taps_required=2)
+    
+  long_l = create_label('Long press')
+  g.add_long_press(long_l, generic_handler)
+  
+  pan_l = create_label('Pan')
+  g.add_pan(pan_l, pan_handler)
+  
+  swipe_l = create_label('Swipe (right)')
+  g.add_swipe(swipe_l, generic_handler, direction=Gestures.RIGHT)
+  
+  pinch_l = create_label('Pinch')
+  g.add_pinch(pinch_l, pinch_handler)
+  
+  pan_or_pinch_l = create_label('Pan or pinch')
+  g.add_pan(pan_or_pinch_l, pan_or_pinch_handler)
+  g.add_pinch(pan_or_pinch_l, pan_or_pinch_handler)
+  
+  g.fail_other = lambda gr, other_gr: gr == Gestures.PAN and other_gr == Gestures.SWIPE
+  
+  pan_or_swipe_l = create_label('Pan or swipe (right)')
+  g.add_pan(pan_or_swipe_l, pan_or_swipe_handler)
+  g.add_swipe(pan_or_swipe_l, pan_or_swipe_handler, direction=Gestures.RIGHT)
+  
+  force_l = create_label('3D long press')
+  g_force.add_long_press(force_l, force_handler)
 
   class EventDisplay(ui.View):
     def __init__(self):
@@ -437,6 +640,4 @@ if __name__ == "__main__":
     def rotation_handler(self, data):
       self.t('Rotation: ' + str(data.rotation))
 
-  view = EventDisplay()
-  view.present()
 
