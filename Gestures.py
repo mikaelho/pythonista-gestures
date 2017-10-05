@@ -452,6 +452,13 @@ if __name__ == "__main__":
     update_text(data.view, 'State: ' + str(data.state) + ' Touches: ' + str(data.number_of_touches))
     random_background(data.view)
     
+  def long_press_handler(data):
+    random_background(data.view)
+    if data.state == Gestures.CHANGED:
+      update_text(data.view, 'Ongoing')
+    elif data.state == Gestures.ENDED:
+      update_text(data.view, 'Finished')
+    
   def pan_handler(data):
     update_text(data.view, 'Trans: ' + str(data.translation))
     random_background(data.view)
@@ -542,7 +549,7 @@ if __name__ == "__main__":
   g.add_tap(doubletap_l, generic_handler, number_of_taps_required=2)
     
   long_l = create_label('Long press')
-  g.add_long_press(long_l, generic_handler)
+  g.add_long_press(long_l, long_press_handler)
   
   pan_l = create_label('Pan')
   g.add_pan(pan_l, pan_handler)
