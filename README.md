@@ -1,6 +1,6 @@
 # Gestures for Pythonista
  
-This is a convenience class for enabling gestures in Pythonista ui applications, including built-in views. Main intent here has been to make them Python friendly, hiding all the Objective-C stuff.
+This is a convenience class for enabling gestures in Pythonista ui applications, including built-in views. Main intent here has been to make them Python friendly, hiding all the Objective-C stuff. All gestures correspond to the standard Apple gestures, except for the custom force press gesture.
 
 Get it from [GitHub](https://github.com/mikaelho/pythonista-gestures).
 
@@ -8,13 +8,13 @@ Get it from [GitHub](https://github.com/mikaelho/pythonista-gestures).
 
 For example, do something when user swipes left on a TextView:
  
-    def swipe_handler(view, data):
+    def swipe_handler(data):
         print ‘I was swiped, starting from ‘ + str(data.location)
      
     tv = ui.TextView()
     Gestures().add_swipe(tv, swipe_handler, direction = Gestures.LEFT)
 
-Your handler method gets two arguments, the `view` that received the gesture, and a `data` argument always contains the attributes described below. Individual gestures may provide more information; see the API documentation for the `add_` methods.
+Your handler method gets one `data` argument that always contains the attributes described below. Individual gestures may provide more information; see the API documentation for the `add_` methods.
   
 * `recognizer` - (ObjC) recognizer object
 * `view` - (Pythonista) view that captured the object
@@ -104,6 +104,18 @@ All of the `add_x` methods return a `recognizer` object that can be used to remo
   
   If swipes to multiple directions are to be recognized, the handler does not receive any indication of the direction of the swipe. Add multiple recognizers if you need to differentiate between the directions. 
 
+#### ` add_force_press(self, view, action, threshold=0.4)`
+
+  Call `action` when a force press gesture is recognized for the `view`.
+  
+  Additional parameters:
+    
+  * `threshold` - How much pressure is required for the gesture to be detected, between 0 and 1. Default is 0.4.
+  
+  Handler `action` receives the following gesture-specific attributes in the `data` argument:
+  
+  * `force` - Force of the press, a value between `threshold` and 1.
+
 #### ` disable(self, recognizer)`
 
   Disable a recognizer temporarily. 
@@ -137,6 +149,7 @@ If you need to set these per gesture, instantiate separate `Gestures` objects.
 
 ## Notes
  
+* Adding a gesture to a view automatically sets `touch_enabled=True` for that view, to avoid counter-intuitive situations where adding a gesture recognizer to ui.Label produces no results.
 * To facilitate the gesture handler callbacks from Objective-C to Python, the Gestures instance used to create the gesture must be live. You do not need to manage that as objc_util.retain_global is used to keep a global reference around. If you for some reason must track the reference manually, you can turn this behavior off with a `retain_global_reference=False` parameter for the constructor.
 * Single Gestures instance can be used to add any number of gestures to any number of views, but you can just as well create a new instance whenever and wherever you need to add a new handler.
 * If you need to create millions of dynamic gestures in a long-running app, it can be worthwhile to explicitly `remove` them when no longer needed, to avoid a memory leak.
