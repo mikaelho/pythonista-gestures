@@ -102,8 +102,6 @@ class Gestures():
   EDGE_RIGHT = 8
   EDGE_ALL = 15
 
-  manager_lookup = {}
-
   def __init__(self, touch_type=TYPE_REGULAR, force_threshold=0.4, retain_global_reference = True):
     self.buttons = {}
     self.views = {}
@@ -375,7 +373,6 @@ class Gestures():
     self.views[key] = view
     recognizer = ObjCClass(recog_name).alloc().initWithTarget_action_(button, sel('invokeAction:')).autorelease()
     self.recognizers[key] = recognizer
-    Gestures.manager_lookup[recognizer] = self
     self.actions[key] = final_handler
     ObjCInstance(view).addGestureRecognizer_(recognizer)
     recognizer.delegate = self._delegate
@@ -492,6 +489,7 @@ if __name__ == "__main__":
     base_color = (.82, .94, .75)
     color_actual = [c*data.force for c in base_color]
     data.view.background_color = tuple(color_actual)
+    data.view.text_color = 'black' if sum(color_actual) > 1.5 else 'white'
     update_text(data.view, 'Force: ' + str(round(data.force, 6)))
     
   def stylus_handler(data):
