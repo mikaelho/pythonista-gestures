@@ -62,7 +62,6 @@ import ui
 from objc_util import *
 
 import uuid
-from types import SimpleNamespace
 from functools import partial
 
 # https://developer.apple.com/library/prerelease/ios/documentation/UIKit/Reference/UIGestureRecognizer_Class/index.html#//apple_ref/occ/cl/UIGestureRecognizer
