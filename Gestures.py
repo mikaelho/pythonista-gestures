@@ -16,7 +16,7 @@ Get it from [GitHub](https://github.com/mikaelho/pythonista-gestures).
 For example, do something when user swipes left on a TextView:
  
     def swipe_handler(data):
-        print ‘I was swiped, starting from ‘ + str(data.location)
+        print(‘I was swiped, starting from ‘ + str(data.location))
      
     tv = ui.TextView()
     Gestures().add_swipe(tv, swipe_handler, direction = Gestures.LEFT)
@@ -100,6 +100,8 @@ class Gestures():
   EDGE_BOTTOM = 4
   EDGE_RIGHT = 8
   EDGE_ALL = 15
+  
+  instance_lookup = {}
 
   def __init__(self, touch_type=TYPE_REGULAR, force_threshold=0.4, retain_global_reference = True):
     self.buttons = {}
@@ -140,7 +142,8 @@ class Gestures():
     # Recognize simultaneously
 
     def gestureRecognizer_shouldRecognizeSimultaneouslyWithGestureRecognizer_(_self, _sel, gr, other_gr):
-      return self.objc_should_recognize_simultaneously(self.recognize_simultaneously, gr, other_gr)
+      slf = Gestures.get_self(_self)
+      return slf.objc_should_recognize_simultaneously(self.recognize_simultaneously, gr, other_gr)
 
     def objc_should_recognize_simultaneously_default(func, gr, other_gr):
       return simplify(func, gr, other_gr)
@@ -150,7 +153,8 @@ class Gestures():
     # Fail other
     
     def gestureRecognizer_shouldRequireFailureOfGestureRecognizer_(_self, _sel, gr, other_gr):
-      return self.objc_should_require_failure(self.fail_other, gr, other_gr)
+      slf = Gestures.get_self(_self)
+      return slf.objc_should_require_failure(self.fail_other, gr, other_gr)
 
     def objc_should_require_failure_default(func, gr, other_gr):
       return simplify(func, gr, other_gr)
@@ -160,7 +164,8 @@ class Gestures():
     # Fail
     
     def gestureRecognizer_shouldBeRequiredToFailByGestureRecognizer_(_self, _sel, gr, other_gr):
-      return self.objc_should_fail(self.fail, gr, other_gr)
+      slf = Gestures.get_self(_self)
+      return slf.objc_should_fail(self.fail, gr, other_gr)
 
     def objc_should_fail_default(func, gr, other_gr):
       return simplify(func, gr, other_gr)
@@ -183,6 +188,15 @@ class Gestures():
       protocols=['UIGestureRecognizerDelegate'],
       debug=True)
     self._delegate = PythonistaGestureDelegate.new()
+    self.record_self(self._delegate)
+    
+  def record_self(self, delegate):
+    key = delegate.__hash__()
+    Gestures.instance_lookup[key] = self
+    
+  @classmethod
+  def get_self(cls, key):
+    return cls.instance_lookup[key]
 
   @on_main_thread
   def add_tap(self, view, action, number_of_taps_required = None, number_of_touches_required = None):
@@ -440,6 +454,7 @@ if __name__ == "__main__":
   import math, random
   
   g = Gestures()
+  g2 = Gestures()
   
   def random_background(view):
     colors = ['#0b6623', '#9dc183', '#3f704d', '#8F9779', '#4F7942', '#A9BA9D', '#D0F0C0', '#043927', '#679267', '#2E8B57']
@@ -519,7 +534,7 @@ if __name__ == "__main__":
     label_count += 1
     label_w = 175
     label_h = 75
-    gap = 10
+    gap = 5
     label_w_with_gap = label_w + gap
     label_h_with_gap = label_h + gap
     labels_per_line = math.floor((v.width-2*gap)/(label_w+gap))
@@ -569,55 +584,9 @@ if __name__ == "__main__":
   g.fail_other = lambda gr, other_gr: gr == Gestures.PAN and other_gr == Gestures.SWIPE
   
   pan_or_swipe_l = create_label('Pan or swipe (right)')
-  g.add_pan(pan_or_swipe_l, pan_or_swipe_handler)
-  g.add_swipe(pan_or_swipe_l, pan_or_swipe_handler, direction=Gestures.RIGHT)
+  g2.add_pan(pan_or_swipe_l, pan_or_swipe_handler)
+  g2.add_swipe(pan_or_swipe_l, pan_or_swipe_handler, direction=Gestures.RIGHT)
   
   force_l = create_label('Force press')
-  g.add_force_press(force_l, force_handler)
-  
-  class EventDisplay(ui.View):
-    def __init__(self):
-      self.tv = ui.TextView(flex='WH', editable=False)
-      self.add_subview(self.tv)
-      self.tv.frame = (0, 0, self.width, self.height)
-      
-      g = Gestures()
-      
-      g.recognize_simultaneously = lambda gr, other_gr: gr == Gestures.PAN and other_gr == Gestures.PINCH
-        
-      g.fail_other = lambda gr, other_gr: other_gr == Gestures.PINCH
-  
-      g.add_tap(self, self.general_handler)
-  
-      g.add_long_press(self.tv, self.long_press_handler)
-  
-      pan = g.add_pan(self, self.pan_handler)
-  
-      #g.add_screen_edge_pan(self.tv, self.pan_handler, edges = Gestures.EDGE_LEFT)
-  
-      #g.add_swipe(self.tv, self.general_handler, direction = [Gestures.DOWN])
-  
-      #g.add_pinch(self, self.pinch_handler)
-  
-      g.add_rotation(self.tv, self.rotation_handler)
-  
-    def t(self, msg):
-      self.tv.text = self.tv.text + msg + '\n'
-  
-    def general_handler(self, data):
-      self.t('General: ' + str(data.location) + ' - state: ' + str(data.state) + ' - touches: ' + str(data.number_of_touches))
-  
-    def long_press_handler(self, data):
-      if data.state == Gestures.ENDED:
-        self.t('Long press: ' + str(data.location) + ' - state: ' + str(data.state) + ' - touches: ' + str(data.number_of_touches))
-  
-    def pan_handler(self, data):
-      self.t('Pan: ' + str(data.translation) + ' - state: ' + str(data.state))
-  
-    def pinch_handler(self, data):
-      self.t('Pinch: ' + str(data.scale) + ' state: ' + str(data.state))
-  
-    def rotation_handler(self, data):
-      self.t('Rotation: ' + str(data.rotation))
-
+  g2.add_force_press(force_l, force_handler)
 
