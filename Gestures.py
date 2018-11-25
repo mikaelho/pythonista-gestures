@@ -49,6 +49,18 @@ All regular recognizers have convenience names that you can use like in the exam
 
 If you need to set these per gesture, instantiate separate `Gestures` objects.
 
+## Pythonista app-closing gesture
+
+When you use the `hide_title_bar=True` attribute with `present`, you close the app with the 2-finger-swipe-down gesture. If your use case requires it, you can disable this gesture with:
+  
+    Gestures.disable_swipe_to_close(view)
+    
+where the `view` is the one you `present`.
+
+You can also replace the close gesture with another, by providing the "magic" Gestures.close_app method as the gesture handler. For example, if you feel that tapping with two thumbs is more convenient in two-handed phone use:
+  
+    Gestures().add_tap(view, Gestures.close_app, number_of_touches_required=2)
+
 ## Notes
  
 * Adding a gesture to a view automatically sets `touch_enabled=True` for that view, to avoid counter-intuitive situations where adding a gesture recognizer to e.g. ui.Label produces no results.
@@ -215,6 +227,11 @@ class Gestures():
       recog.numberOfTouchesRequired = number_of_touches_required
 
     return recog
+    
+  @on_main_thread
+  def add_doubletap(self, view, action, number_of_touches_required = None):
+    ''' Convenience method that calls `add_tap` with a 2-tap requirement. '''
+    self.add_tap(view, action, number_of_taps_required = 2, number_of_touches_required=number_of_touches_required)
 
   @on_main_thread
   def add_long_press(self, view, action, number_of_taps_required = None, number_of_touches_required = None, minimum_press_duration = None, allowable_movement = None):
@@ -375,21 +392,52 @@ class Gestures():
     gestures = ObjCInstance(view).gestureRecognizers()
     for recog in gestures:
       self.remove(view, recog)
+      
+  @classmethod
+  def disable_swipe_to_close(cls, view):
+    ''' Utility class method that will
+    disable the two-finger-swipe-down gesture
+    used in Pythonista to end the program
+    when in full screen view 
+    (`hide_title_bar` set to `True`).
+    '''
+    UILayoutContainerView = ObjCClass('UILayoutContainerView')
+    UISwipeGestureRecognizer = ObjCClass('UISwipeGestureRecognizer')
+    v = view.objc_instance
+    while not v.isKindOfClass_(UILayoutContainerView.ptr):
+      v = v.superview()
+    for gr in v.gestureRecognizers():
+      if gr.isKindOfClass_(UISwipeGestureRecognizer.ptr):
+        gr.setEnabled(False)
+        return v, gr.valueForKey_('targets')[0].target()
+     
+  @classmethod
+  def replace_close_gesture(cls, view, recog_name):
+    recog_name_str = recog_name.decode("utf-8")
+    view, target = cls.disable_swipe_to_close(view)
+    recognizer = ObjCClass(recog_name).alloc().initWithTarget_action_(target, sel('dismiss:')).autorelease()
+    view.addGestureRecognizer_(recognizer)
 
   def _get_recog(self, recog_name, view, internal_action, final_handler):
-    view.touch_enabled = True
-    button = ui.Button()
-    key = str(uuid.uuid4())
-    button.name = key
-    button.action = internal_action
-    self.buttons[key] = button
-    self.views[key] = view
-    recognizer = ObjCClass(recog_name).alloc().initWithTarget_action_(button, sel('invokeAction:')).autorelease()
-    self.recognizers[key] = recognizer
-    self.actions[key] = final_handler
-    ObjCInstance(view).addGestureRecognizer_(recognizer)
-    recognizer.delegate = self._delegate
-    return recognizer
+    if not final_handler == Gestures.close_app:
+      view.touch_enabled = True
+      button = ui.Button()
+      key = str(uuid.uuid4())
+      button.name = key
+      button.action = internal_action
+      self.buttons[key] = button
+      self.views[key] = view
+      recognizer = ObjCClass(recog_name).alloc().initWithTarget_action_(button, sel('invokeAction:')).autorelease()
+      self.recognizers[key] = recognizer
+      self.actions[key] = final_handler
+      ObjCInstance(view).addGestureRecognizer_(recognizer)
+      recognizer.delegate = self._delegate
+      return recognizer
+    else:
+      view, target = Gestures.disable_swipe_to_close(view)
+      recognizer = ObjCClass(recog_name).alloc().initWithTarget_action_(target, sel('dismiss:')).autorelease()
+      view.addGestureRecognizer_(recognizer)
+      return recognizer
 
   class Data():
     def __init__(self):
@@ -446,15 +494,26 @@ class Gestures():
     if force_fraction > threshold:
       data.force = force_fraction
       action(data)
+
+  @classmethod
+  def close_app(cls):
+    pass
+
     
 # TESTING AND DEMONSTRATION
 
 if __name__ == "__main__":
   
-  import math, random
+  import math, random, console
   
   g = Gestures()
   g2 = Gestures()
+    
+  bg = ui.View(background_color='black')
+  bg.present(hide_title_bar=True)
+  g.add_tap(bg, Gestures.close_app, number_of_touches_required=2)
+  
+  console.hud_alert('Tap with 2 fingers to close the app')
   
   def random_background(view):
     colors = ['#0b6623', '#9dc183', '#3f704d', '#8F9779', '#4F7942', '#A9BA9D', '#D0F0C0', '#043927', '#679267', '#2E8B57']
@@ -509,9 +568,6 @@ if __name__ == "__main__":
   def stylus_handler(data):
     random_background(data.view)
   
-  bg = ui.View()
-  bg.present()
-  
   edge_l = ui.Label(
     text='Edge pan (from right)', 
     background_color='grey',
@@ -560,7 +616,7 @@ if __name__ == "__main__":
   g.add_tap(tap_l, generic_handler)
   
   tap_2_l = create_label('2-finger tap')
-  g.add_tap(tap_2_l, generic_handler, number_of_touches_required=2)
+  g.add_doubletap(tap_2_l, generic_handler)
   
   doubletap_l = create_label('Doubletap')
   g.add_tap(doubletap_l, generic_handler, number_of_taps_required=2)
