@@ -51,13 +51,13 @@ If you need to set these per gesture, instantiate separate `Gestures` objects.
 
 ## Pythonista app-closing gesture
 
-When you use the `hide_title_bar=True` attribute with `present`, you close the app with the 2-finger-swipe-down gesture. If your use case requires it, you can disable this gesture with:
+When you use the `hide_title_bar=True` attribute with `present`, you close the app with the 2-finger-swipe-down gesture. If your use case requires it, Gestures supports disabling this gesture with:
   
     Gestures.disable_swipe_to_close(view)
     
 where the `view` is the one you `present`.
 
-You can also replace the close gesture with another, by providing the "magic" Gestures.close_app method as the gesture handler. For example, if you feel that tapping with two thumbs is more convenient in two-handed phone use:
+You can also replace the close gesture with another, by providing the "magic" `Gestures.close_app` method as the gesture handler. For example, if you feel that tapping with two thumbs is more convenient in two-handed phone use:
   
     Gestures().add_tap(view, Gestures.close_app, number_of_touches_required=2)
 
@@ -73,10 +73,11 @@ You can also replace the close gesture with another, by providing the "magic" Ge
 import ui
 from objc_util import *
 
-import uuid
+import uuid, weakref
 from functools import partial
 
 # https://developer.apple.com/library/prerelease/ios/documentation/UIKit/Reference/UIGestureRecognizer_Class/index.html#//apple_ref/occ/cl/UIGestureRecognizer
+
 
 class Gestures():
 
@@ -112,8 +113,6 @@ class Gestures():
   EDGE_BOTTOM = 4
   EDGE_RIGHT = 8
   EDGE_ALL = 15
-  
-  instance_lookup = {}
 
   def __init__(self, touch_type=TYPE_REGULAR, force_threshold=0.4, retain_global_reference = True):
     self.buttons = {}
@@ -126,18 +125,18 @@ class Gestures():
     if retain_global_reference:
       retain_global(self)
 
-    # Friendly delegate functions
-
+    # Friendly delegate function defaults
     def recognize_simultaneously_default(gr_name, other_gr_name):
-      return False    
-    self.recognize_simultaneously = recognize_simultaneously_default
-    
+      return False
+      
     def fail_default(gr_name, other_gr_name):
-      return False    
-    self.fail = fail_default
-    
+      return False
+      
     def fail_other_default(gr_name, other_gr_name):
       return False    
+    
+    self.recognize_simultaneously = recognize_simultaneously_default
+    self.fail = fail_default
     self.fail_other = fail_other_default
 
     # ObjC delegate functions
@@ -154,35 +153,24 @@ class Gestures():
     # Recognize simultaneously
 
     def gestureRecognizer_shouldRecognizeSimultaneouslyWithGestureRecognizer_(_self, _sel, gr, other_gr):
-      slf = Gestures.get_self(_self)
-      return slf.objc_should_recognize_simultaneously(self.recognize_simultaneously, gr, other_gr)
-
-    def objc_should_recognize_simultaneously_default(func, gr, other_gr):
-      return simplify(func, gr, other_gr)
-      
-    self.objc_should_recognize_simultaneously = objc_should_recognize_simultaneously_default
+      delegate_instance = ObjCInstance(_self)
+      slf = delegate_instance._gestures()
+      return simplify(slf.recognize_simultaneously, gr, other_gr)
     
     # Fail other
     
     def gestureRecognizer_shouldRequireFailureOfGestureRecognizer_(_self, _sel, gr, other_gr):
-      slf = Gestures.get_self(_self)
-      return slf.objc_should_require_failure(self.fail_other, gr, other_gr)
-
-    def objc_should_require_failure_default(func, gr, other_gr):
-      return simplify(func, gr, other_gr)
-      
-    self.objc_should_require_failure = objc_should_require_failure_default
+      delegate_instance = ObjCInstance(_self)
+      slf = delegate_instance._gestures()
+      return simplify(slf.fail_other, gr, other_gr)
     
     # Fail
     
     def gestureRecognizer_shouldBeRequiredToFailByGestureRecognizer_(_self, _sel, gr, other_gr):
-      slf = Gestures.get_self(_self)
-      return slf.objc_should_fail(self.fail, gr, other_gr)
-
-    def objc_should_fail_default(func, gr, other_gr):
-      return simplify(func, gr, other_gr)
-      
-    self.objc_should_fail = objc_should_fail_default
+      #slf = Gestures.get_self(_self)
+      delegate_instance = ObjCInstance(_self)
+      slf = delegate_instance._gestures()
+      return simplify(slf.fail, gr, other_gr)
     
     # Delegate
     
@@ -200,15 +188,7 @@ class Gestures():
       protocols=['UIGestureRecognizerDelegate'],
       debug=True)
     self._delegate = PythonistaGestureDelegate.new()
-    self.record_self(self._delegate)
-    
-  def record_self(self, delegate):
-    key = delegate.__hash__()
-    Gestures.instance_lookup[key] = self
-    
-  @classmethod
-  def get_self(cls, key):
-    return cls.instance_lookup[key]
+    self._delegate._gestures = weakref.ref(self)
 
   @on_main_thread
   def add_tap(self, view, action, number_of_taps_required = None, number_of_touches_required = None):
@@ -615,11 +595,8 @@ if __name__ == "__main__":
   tap_l = create_label('Tap')
   g.add_tap(tap_l, generic_handler)
   
-  tap_2_l = create_label('2-finger tap')
+  tap_2_l = create_label('Doubletap')
   g.add_doubletap(tap_2_l, generic_handler)
-  
-  doubletap_l = create_label('Doubletap')
-  g.add_tap(doubletap_l, generic_handler, number_of_taps_required=2)
     
   long_l = create_label('Long press')
   g.add_long_press(long_l, long_press_handler)
@@ -640,8 +617,8 @@ if __name__ == "__main__":
   g.fail_other = lambda gr, other_gr: gr == Gestures.PAN and other_gr == Gestures.SWIPE
   
   pan_or_swipe_l = create_label('Pan or swipe (right)')
-  g2.add_pan(pan_or_swipe_l, pan_or_swipe_handler)
-  g2.add_swipe(pan_or_swipe_l, pan_or_swipe_handler, direction=Gestures.RIGHT)
+  g.add_pan(pan_or_swipe_l, pan_or_swipe_handler)
+  g.add_swipe(pan_or_swipe_l, pan_or_swipe_handler, direction=Gestures.RIGHT)
   
   force_l = create_label('Force press')
   g2.add_force_press(force_l, force_handler)
