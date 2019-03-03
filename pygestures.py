@@ -7,7 +7,7 @@ Implement following methods to handle gestures:
 * on_pan
 '''
 
-import time
+import time, math
 import ui
 from scene import Point
 
@@ -71,6 +71,20 @@ class GestureData:
     distance_vector = touches[0].location - touches[1].location
     return abs(distance_vector)
     
+  def radians(self, vector):
+    return math.atan2(vector.y, vector.x)
+    
+  def degrees(self, vector):
+    return math.degrees(self.radians(vector))
+    
+  @property
+  def angle(self):
+    center = self.center_location()
+    sum_degrees = 0
+    for touch in self.touches.values():
+      sum_degrees += self.degrees(touch.location - center)
+    return sum_degrees/len(self.touches)
+    
 
 class GestureMixin():
   
@@ -85,6 +99,7 @@ class GestureMixin():
     g.no_of_touches = max(g.no_of_touches, len(g.touches))
     if g.no_of_touches == 2:
       g.start_pinch_distance = g.pinch_distance
+      g.start_angle = g.angle
     
   def touch_moved(self, touch):
     g = self._gestures
@@ -113,10 +128,12 @@ class GestureMixin():
         if hasattr(self, 'on_pan'):
           self.on_pan(g)
         if len(g.touches) > 1:
+          g.scale = g.pinch_distance/g.start_pinch_distance
+          g.rotation = g.angle - g.start_angle
           if len(g.touches) == 2 and hasattr(self, 'on_pinch'):
-            g.scale = g.pinch_distance/g.start_pinch_distance
             self.on_pinch(g)
-          
+          if hasattr(self, 'on_rotate'):
+            self.on_rotate(g)
 
     if hasattr(self, 'on_debug'):
       self.on_debug(g)
@@ -156,18 +173,32 @@ if __name__ == '__main__':
     def __init__(self, **kwargs):
       self.background_color = 'green'
       super().__init__(**kwargs)
-      self.status = ui.Label(
-        frame=self.bounds, flex='WH', 
+      self.data = None
+      self.labels = {}
+      
+    def create_labels(self):
+      self.create_label('Tap')
+      self.create_label('Long press')
+      self.create_label('Swipe')
+      self.create_label('Pan')
+      self.create_label('Pinch')
+      self.create_label('Rotate')
+      
+    def create_label(self, name):
+      l = ui.Label(name=name,
+        x=0, flex='TBRW', 
         alignment=ui.ALIGN_CENTER, 
         number_of_lines=0,
         text_color='white')
-      self.add_subview(self.status)
-      self.data = None
+      l.y = self.height/6 * len(self.subviews)
+      l.width = self.width
+      self.add_subview(l)
       
     def show_status(self, data, gesture_name, data_string=None):
+      l = self[gesture_name]
       if data_string is None:
         data_string = f'Loc: {data.location}, Touches: {data.no_of_touches}'
-      self.status.text = f'{gesture_name}\n{data_string}'
+      l.text = f'{gesture_name}\n{data_string}'
 
     def on_tap(self, data):
       self.show_status(data, 'Tap')
@@ -182,7 +213,10 @@ if __name__ == '__main__':
       self.show_status(data, 'Pan')
       
     def on_pinch(self, data):
-      self.show_status(data, 'Zoom', f'Scale: {data.scale}')
+      self.show_status(data, 'Pinch', f'Scale: {data.scale}')
+      
+    def on_rotate(self, data):
+      self.show_status(data, 'Rotate', f'Angle: {data.rotation}')
     
     def on_debug(self, data):
       self.data = copy.deepcopy(data)
@@ -209,6 +243,7 @@ if __name__ == '__main__':
       
   v = TestView()
   v.present()
+  v.create_labels()
   '''
   t = TapView(
     frame=(0,0, v.width/2, v.height/2), flex='WH')
