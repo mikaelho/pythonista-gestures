@@ -1,10 +1,37 @@
 '''
-Mixin class to be inherited together with Pythonista ui.View for gesture support.
+Python gesture implementation for those situations where you cannot or do not want to use the ObjC gestures.
 
-Implement following methods to handle gestures:
-* on_tap
-* on_pinch
-* on_pan
+Simple usage example:
+  
+    import pygestures
+    
+    class MyTouchableView(pygestures.GestureView):
+      
+      def on_swipe(self, data):
+        if data.direction in (data.UP, data.DOWN):
+          print('I was swiped vertically')
+          
+Run the file as-is to play around with the gestures. (Green circles track your touches, crosshairs show the centroid, red circle reflects pan, pinch and rotation.)
+
+In your subclass, implement any or all the methods below to handle gestures. All methods get an information object with attributes including:
+
+* `state` - one of BEGAN, CHANGED, ENDED
+* `location` - location of the touch, or the centroid of all touches, as a scene.Point
+* `no_of_touches` - use this if you want to filter for e.g. only taps with 2 fingers
+
+Methods:
+  
+* `on_tap`
+* `on_long_press`
+* `on_swipe` - data includes `direction`, one of UP, DOWN, LEFT, RIGHT
+* `on_swipe_up`, `on_swipe_down`, `on_swipe_left`, `on_swipe_right`
+* `on_pan` - data includes `translation`, the distance from the start of the gesture, as a scene.Point. For most purposes this is better than `location`, as it does not jump around if you add more fingers.
+* `on_pinch` - data includes `scale`
+* `on_rotate` - data includes `rotation` in degrees, negative for counterclockwise rotation
+
+There are also `prev_translation`, `prev_scale` and `prev_rotation`, if you need them.
+
+If it is more convenient to you, you can inherit GestureMixin together with ui.View or some other custom view class. In that case, if you want to use e.g. rotate, you need to make sure you have set `multitouch_enabled = True`.
 '''
 
 import time, math
@@ -84,11 +111,13 @@ class GestureData:
         self.pinch_distance = None
         self.prev_pinch_distance = None
         self.scale = None
+        self.prev_scale = None
       if gesture == 'rotate':
         self.start_angle = None
         self.angle = None
         self.prev_angle = None
         self.rotation = None
+        self.prev_rotation = None
     
   def is_possible(self, *gestures):
     return all((self.gesture_states[gesture] == self.POSSIBLE for gesture in gestures))
@@ -151,13 +180,16 @@ class GestureData:
       self.touches_in_order[1].location)
     return abs(distance_vector)
     
-  def get_angle(self):
-    if self.first_touch and self.second_touch:
-      return self.degrees(
-        self.second_touch.location - 
-        self.first_touch.location)
-    else:
-      return 0
+  def get_angle(self, prev_angle=None):
+    angle = self.degrees(
+      self.touches_in_order[0].location -  
+      self.touches_in_order[1].location)
+    if prev_angle is not None and abs(prev_angle) > 90:
+      if prev_angle > 0 and angle < 0:
+        angle += 360
+      if prev_angle < 0 and angle > 0:
+        angle -= 360
+    return angle
     
   def radians(self, vector):
     rad = math.atan2(vector.y, vector.x)
@@ -165,14 +197,6 @@ class GestureData:
     
   def degrees(self, vector):
     return math.degrees(self.radians(vector))
-    
-    '''
-    center = self.center_location()
-    sum_degrees = 0
-    for touch in self.touches.values():
-      sum_degrees += self.degrees(touch.location - center)
-    return sum_degrees/len(self.touches)
-    '''
     
 
 class GestureMixin():
@@ -207,27 +231,18 @@ class GestureMixin():
       g.prev_pinch_distance = g.pinch_distance
       g.pinch_distance = g.get_pinch_distance()
       
+      g.prev_angle = g.angle
+      g.angle = g.get_angle(g.prev_angle)
+      
       if g.start_pinch_distance is None:
         g.start_pinch_distance = g.pinch_distance
       else:
         g.start_pinch_distance += g.pinch_distance - g.prev_pinch_distance
 
-        
-      #g.start_angle = g.angle
-    
-    '''
-      
-
-    
-      
-    if g.first_touch and g.second_touch:
-      g.prev_angle = g.angle
-      g.angle = g.get_angle()
       if g.start_angle is None:
         g.start_angle = g.angle
-      #else:
-      #  g.start_angle += g.angle - g.prev_angle
-    '''
+      else:
+        g.start_angle += g.angle - g.prev_angle
     
   def touch_moved(self, touch):
     g = self._gestures
@@ -256,69 +271,22 @@ class GestureMixin():
       'swipe_up', 'swipe_down'):
       g.check('pan')
       if len(g.touches) >= 2:      
+        
         g.prev_pinch_distance = g.pinch_distance
         g.pinch_distance = g.get_pinch_distance()
+        g.prev_scale = g.scale
         g.scale = g.pinch_distance/g.start_pinch_distance
         g.check('pinch')
-    
-    '''
-    g.prev_angle = g.angle
-    g.angle = g.get_angle()
-
-    '''
-    '''
-    if not g.moving:
-      if t.distance_from_start > g.move_threshold:
-        g.moving = True
-    if (not g.moving and
-      g.duration > g.long_press_threshold and 
-      hasattr(self, 'on_long_press')):
-      self.on_long_press(g)
-      g.state = GestureData.COMPLETE
-
-    if g.moving:
-      if (self.swiping_enabled and
-        g.duration < GestureData.tap_threshold):
-        g.swipe_direction = True
-      else:
-        g.swipe_direction = None
-        if hasattr(self, 'on_pan'):
-          if not g.panning:
-            g.panning = True
-            g.state = g.BEGAN
-          else:
-            g.state = g.MOVED
-          self.on_pan(g)
-        if g.first_touch and g.second_touch:
-          g.scale = g.pinch_distance/g.start_pinch_distance
-          g.rotation = g.angle - g.start_angle
-          if len(g.touches) == 2 and hasattr(self, 'on_pinch'):
-            if not g.pinching:
-              g.pinching = True
-              g.state = g.BEGAN
-            else:
-              g.state = g.MOVED
-            self.on_pinch(g)
-          if hasattr(self, 'on_rotate'):
-            if not g.rotating:
-              g.rotating = True
-              g.state = g.BEGAN
-            else:
-              g.state = g.MOVED
-            self.on_rotate(g)
-      g.state = GestureData.MOVED
-    '''
-    #if hasattr(self, 'on_debug'):
-    #  self.on_debug(g)
+        
+        g.prev_angle = g.angle
+        g.angle = g.get_angle(g.prev_angle)
+        g.prev_rotation = g.rotation
+        g.rotation = g.angle - g.start_angle
+        g.check('rotate')
     
   def touch_ended(self, touch):
     g = self._gestures
-    '''
-    t = g.touches[touch.touch_id]
-    if t == g.first_touch or t == g.second_touch:
-      g.first_touch = None
-      g.second_touch = None
-    '''
+
     del g.touches[touch.touch_id]
     if g.out_of_business:
       return
@@ -336,14 +304,14 @@ class GestureMixin():
           g.start_pinch_distance += g.pinch_distance - g.prev_pinch_distance
         else:
           g.soft_end('pinch')
-        
-      '''
-      if g.first_touch and g.second_touch:
-        g.prev_angle = g.angle
-        g.angle = g.get_angle()
-        if g.rotating:
+          
+      g.prev_angle = g.angle
+      g.angle = g.get_angle(g.prev_angle)
+      if g.is_active('rotate'):
+        if len(g.touches) > 1:
           g.start_angle += g.angle - g.prev_angle
-      '''
+        else:
+          g.soft_end('rotate')
         
     if len(g.touches) == 0:
       g.end_time = time.time()
@@ -355,11 +323,11 @@ class GestureMixin():
         
       delta = g.translation
       if abs(delta.x) > abs(delta.y):
-        g.swipe_direction = g.RIGHT if delta.x > 0 else g.LEFT
+        g.direction = g.RIGHT if delta.x > 0 else g.LEFT
       else:
-        g.swipe_direction = g.DOWN if delta.y > 0 else g.UP
+        g.direction = g.DOWN if delta.y > 0 else g.UP
       swiped = False
-      gesture = 'swipe_'+g.swipe_direction
+      gesture = 'swipe_'+g.direction
       if g.is_possible(gesture):
         g.end(gesture)
         swiped = True
@@ -369,13 +337,6 @@ class GestureMixin():
       if swiped:
         return 
         
-      '''
-      else:
-        if g.swipe_direction and g.duration < GestureData.tap_threshold:
-
-      '''
-    #if hasattr(self, 'on_debug'):
-    #  self.on_debug(g)
           
 class GestureView(ui.View, GestureMixin):
   
@@ -429,7 +390,7 @@ if __name__ == '__main__':
       self.show_status(data, 'Long press')
       
     def on_swipe(self, data):
-      self.show_status(data, 'Swipe', data.swipe_direction)
+      self.show_status(data, 'Swipe', data.direction)
       
     def on_pan(self, data):
       self.show_status(data, 'Pan', f'Translation: {data.translation}')
@@ -443,8 +404,7 @@ if __name__ == '__main__':
       self.show_status(data, 'Pinch', f'Scale: {data.scale}')
       
     def on_rotate(self, data):
-      self.data = copy.deepcopy(data)
-      self.show_status(data, 'Rotate', f'Angle: {data.rotation}')
+      self.show_status(data, 'Rotate', f'Rotation: {data.rotation:.2f}')
     
     def on_debug(self, data):
       self.data = copy.deepcopy(data)
@@ -472,7 +432,6 @@ if __name__ == '__main__':
       ui.set_color('darkgreen')
       p.stroke()
       
-      '''
       if len(self.translate_track) > 1:
         p = ui.Path()
         p.move_to(*(self.bounds.center() + self.translate_track[0]))
@@ -480,7 +439,6 @@ if __name__ == '__main__':
           p.line_to(*(self.bounds.center() + pos))
         ui.set_color((1,0,0,0.5))
         p.stroke()
-      '''
         
       if self.data.translation is not None:
         radius = 40 * self.data.scale if self.data.scale is not None else 1
@@ -504,14 +462,4 @@ if __name__ == '__main__':
   v = TestView()
   v.present(title_bar_color='black')
   v.create_labels()
-
-  '''
-  t = TapView(
-    frame=(0,0, v.width/2, v.height/2), flex='WH')
-  v.add_subview(t)
   
-  d = DebugView(
-    frame=(v.width/2, 0, v.width/2, v.height/2), flex='WH')
-  v.add_subview(d)
-  '''
-
