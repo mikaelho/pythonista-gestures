@@ -490,6 +490,10 @@ class ZoomPanView(GestureView):
       focus_pos = ui.convert_point(
         data.location, self, self.zoomer)
       self.scale = self.start_scale * data.scale
+      if self.min_scale is not None:
+        self.scale = max(self.scale, self.min_scale)
+      if self.max_scale is not None:
+        self.scale = min(self.scale, self.max_scale)
       #self.zoomer.transform = ui.Transform.scale(*(self.scale,)*2)
       self._set_transforms()
       focus_location = ui.convert_point(
@@ -504,6 +508,10 @@ class ZoomPanView(GestureView):
       focus_pos = ui.convert_point(
         data.location, self, self.zoomer)
       self.rotation = self.start_rotation + data.rotation
+      if self.min_rotation is not None:
+        self.rotation = max(self.rotation, self.min_rotation)
+      if self.max_rotation is not None:
+        self.rotation = min(self.rotation, self.max_rotation)
       #self.zoomer.transform = ui.Transform.rotation(math.radians(self.rotation))
       self._set_transforms()
       focus_location = ui.convert_point(
@@ -673,7 +681,12 @@ if __name__ == '__main__':
   class ZoomPanDemo(ZoomPanView):
     
     def __init__(self, **kwargs):
-      super().__init__(rotate=True, **kwargs)
+      super().__init__(
+        rotate=True,
+        min_scale=.5, max_scale=2,
+        min_rotation=-45,
+        max_rotation=45,
+        **kwargs)
       
       w, h = self.bounds[2], self.bounds[3]
       iv = ui.ImageView(
