@@ -35,6 +35,12 @@ Methods:
 There are also `prev_translation`, `prev_scale` and `prev_rotation`, if you need them.
 
 If it is more convenient to you, you can inherit GestureMixin together with ui.View or some other custom view class. In that case, if you want to use e.g. rotate, you need to make sure you have set `multitouch_enabled = True`.
+
+There is also a `ZoomPanView`, with built-in support for panning, pinching and rotating the view and all the subviews. It's constructor has the following optional parameters:
+  
+  * `pan=True`, `zoom=True`, `rotate=False`
+  * `min_scale`, `max_scale`
+  * `min_rotation`, `max_rotation`
 '''
 
 import time, math
@@ -444,7 +450,18 @@ class TouchRelayView(ui.View, TouchRelayMixin):
     
 class ZoomPanView(GestureView):
   
-  def __init__(self, **kwargs):
+  def __init__(self,
+    pan=True, zoom=True, rotate=False, 
+    min_scale=None, max_scale=None,
+    min_rotation=None, max_rotation=None, 
+    **kwargs):
+    self.pan = pan
+    self.zoom = zoom
+    self.rotate = rotate
+    self.min_scale = min_scale
+    self.max_scale = max_scale
+    self.min_rotation = min_rotation
+    self.max_rotation = max_rotation
     self.background_color = 'black'
     self.name = 'ZoomPanView'
     super().__init__(**kwargs)
@@ -459,12 +476,14 @@ class ZoomPanView(GestureView):
     self.zoomer.add_subview(view)
 
   def on_pan(self, data):
+    if not self.pan: return 
     # Use translation instead of location to
     # not be sensitive to additional touches
     if data.changed:
       self.zoomer.center += data.translation - data.prev_translation
 
   def on_pinch(self, data):
+    if not self.zoom: return 
     if data.began:
       self.start_scale = self.scale
     if data.changed:
@@ -478,6 +497,7 @@ class ZoomPanView(GestureView):
       self.zoomer.center -= focus_location - data.location
       
   def on_rotate(self, data):
+    if not self.rotate: return
     if data.began:
       self.start_rotation = self.rotation
     if data.changed:
@@ -515,6 +535,20 @@ if __name__ == '__main__':
       self.labels = {}
       self.translate_track = []
       
+      self.hint = ui.Label(
+        text='Play with gestures or swipe from this edge',
+        alignment=ui.ALIGN_CENTER, 
+        text_color=(1,1,1,0.5),
+        flex='TLB'
+      )
+      self.hint.size_to_fit()
+      self.hint.center = (
+        self.width - self.hint.height,
+        self.height/2)
+      self.hint.transform = ui.Transform.rotation(math.radians(-90))
+      self.add_subview(self.hint)
+      
+      
       self.zpd = ZoomPanDemo(
         frame=self.bounds,
         flex='WH')
@@ -525,23 +559,24 @@ if __name__ == '__main__':
       self.zpd.bring_to_front()
       
     def create_labels(self):
-      self.create_label('Tap')
-      self.create_label('Long press')
-      self.create_label('Swipe')
-      self.create_label('Edge swipe')
-      self.create_label('Pan')
-      self.create_label('Pinch')
-      self.create_label('Rotate')
-      
-    def create_label(self, name):
-      l = ui.Label(name=name,
-        x=0, flex='TBRW', 
-        alignment=ui.ALIGN_CENTER, 
-        number_of_lines=0,
-        text_color=(1,1,1,0.5))
-      l.y = self.height/7 * len(self.subviews)
-      l.width = self.width
-      self.add_subview(l)
+      labels = (
+        'Tap',
+        'Long press',
+        'Swipe',
+        'Edge swipe',
+        'Pan',
+        'Pinch',
+        'Rotate'
+      )
+      for i, label in enumerate(labels):
+        l = ui.Label(name=label,
+          x=0, flex='TBRW', 
+          alignment=ui.ALIGN_CENTER, 
+          number_of_lines=0,
+          text_color=(1,1,1,0.5))
+        l.y = i*self.height/(len(labels)+1)
+        l.width = self.width
+        self.add_subview(l)
       
     def show_status(self, data, gesture_name, data_string=None):
       l = self[gesture_name]
@@ -638,7 +673,7 @@ if __name__ == '__main__':
   class ZoomPanDemo(ZoomPanView):
     
     def __init__(self, **kwargs):
-      super().__init__(**kwargs)
+      super().__init__(rotate=True, **kwargs)
       
       w, h = self.bounds[2], self.bounds[3]
       iv = ui.ImageView(
@@ -647,6 +682,7 @@ if __name__ == '__main__':
         frame=(w/4, h/4, w/2, h/2))
       iv.content_mode = ui.CONTENT_SCALE_ASPECT_FILL
       self.add_subview(iv)
+
       def action(sender):
         self.reset()
       b = ui.Button(
@@ -660,6 +696,22 @@ if __name__ == '__main__':
       b.width += 16
       b.center = self.bounds.center()
       self.add_subview(b)
+      
+      self.hint = ui.Label(
+        text='Pan, zoom, rotate'
+        '\nSwipe from left to return',
+        text_color=(1,1,1,0.5),
+        alignment=ui.ALIGN_CENTER,
+        flex='LBR'
+      )
+      self.hint.size_to_fit()
+      self.hint.number_of_lines=0
+      self.hint.size_to_fit()
+      self.hint.center = (
+        self.width/2,
+        self.hint.height
+      )
+      self.add_subview(self.hint)
       
     def on_edge_swipe_right(self, data):
       def anim():
