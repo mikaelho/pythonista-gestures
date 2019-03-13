@@ -1,5 +1,5 @@
 '''
-Python gesture implementation for those situations where you cannot or do not want to use the ObjC gestures.
+Python gesture implementation [on Github](https://github.com/mikaelho/pythonista-gestures/blob/master/pygestures.py) for those situations where you cannot or do not want to use the ObjC gestures.
 
 Simple usage example:
   
@@ -13,6 +13,8 @@ Simple usage example:
           
 Run the file as-is to play around with the gestures. (Green circles track your touches, crosshairs show the centroid, red circle reflects pan, pinch and rotation.)
 
+![Demo](https://raw.githubusercontent.com/mikaelho/pythonista-gestures/master/pygestures.jpeg)
+
 In your subclass, implement any or all the methods below to handle gestures. All methods get an information object with attributes including:
 
 * `state` - one of BEGAN, CHANGED, ENDED
@@ -23,8 +25,9 @@ Methods:
   
 * `on_tap`
 * `on_long_press`
-* `on_swipe` - data includes `direction`, one of UP, DOWN, LEFT, RIGHT
+* `on_swipe` - data includes `direction`, one of UP, DOWN, LEFT, RIGHT. Note that any active swipe gesture will delay the detection of pan, pinch and rotate, until it is clear that you are not swiping.
 * `on_swipe_up`, `on_swipe_down`, `on_swipe_left`, `on_swipe_right`
+* `on_edge_swipe`, `on_edge_swipe_up`, `on_edge_swipe_down`, `on_edge_swipe_left`, `on_edge_swipe_right`
 * `on_pan` - data includes `translation`, the distance from the start of the gesture, as a scene.Point. For most purposes this is better than `location`, as it does not jump around if you add more fingers.
 * `on_pinch` - data includes `scale`
 * `on_rotate` - data includes `rotation` in degrees, negative for counterclockwise rotation
@@ -35,6 +38,7 @@ If it is more convenient to you, you can inherit GestureMixin together with ui.V
 '''
 
 import time, math
+from  types import SimpleNamespace
 import ui
 from scene import Point
 
@@ -63,6 +67,9 @@ class GestureData:
   gestures = (
     'tap', 'long_press',
     'swipe', 'swipe_up', 'swipe_left', 'swipe_right', 'swipe_down',
+    'edge_swipe',
+    'edge_swipe_up', 'edge_swipe_left', 
+    'edge_swipe_right', 'edge_swipe_down',
     'pan', 'pinch', 'rotate'
   )
   
@@ -135,21 +142,25 @@ class GestureData:
   def none_possible(self, *gestures):
     return not any((
       self.gesture_states[gesture] == self.POSSIBLE for gesture in gestures))
+      
+  def all_failed(self, *gestures):
+    return all((
+      self.gesture_states[gesture] == self.FAILED for gesture in gestures))
     
   def check(self, *gestures):
     for gesture in gestures:
       if self.is_active(gesture):
         if self.is_possible(gesture):
-          self.began(gesture)
+          self.begin(gesture)
         else:
-          self.changed(gesture)
+          self.change(gesture)
     
-  def began(self, gesture):
+  def begin(self, gesture):
     self.gesture_states[gesture] = self.BEGAN
     self.state = self.BEGAN
     getattr(self.view, 'on_'+gesture)(self)
     
-  def changed(self, gesture):
+  def change(self, gesture):
     self.gesture_states[gesture] = self.CHANGED
     self.state = self.CHANGED
     getattr(self.view, 'on_'+gesture)(self)
@@ -162,6 +173,18 @@ class GestureData:
   def soft_end(self, gesture):
     self.end(gesture)
     self.reset(gesture)
+    
+  @property
+  def began(self):
+    return self.state == self.BEGAN
+    
+  @property
+  def changed(self):
+    return self.state == self.CHANGED
+    
+  @property
+  def ended(self):
+    return self.state == self.ENDED
     
   @property
   def out_of_business(self):
@@ -222,6 +245,22 @@ class GestureMixin():
     g.prev_location = g.location
     g.location = g.get_center_location()
     
+    x, y, w, h = self.bounds
+    
+    if touch.location.x > x + 20:
+      g.fail('edge_swipe_right')
+    if touch.location.x < x + w - 20:
+      g.fail('edge_swipe_left')
+    if touch.location.y > y + 20:
+      g.fail('edge_swipe_down')
+    if touch.location.y < y + h - 20:
+      g.fail('edge_swipe_up')
+    if g.all_failed('edge_swipe_up', 
+      'edge_swipe_left', 'edge_swipe_right', 
+      'edge_swipe_down'):
+      g.fail('edge_swipe')
+    
+    
     if g.start_translation is None:
       g.start_translation = touch.location
     else:
@@ -244,7 +283,7 @@ class GestureMixin():
       else:
         g.start_angle += g.angle - g.prev_angle
     
-  def touch_moved(self, touch):
+  def touch_moved(self, touch):    
     g = self._gestures
     if g.out_of_business:
       return
@@ -254,13 +293,21 @@ class GestureMixin():
     t.location = touch.location
     g.prev_location = g.location
     g.location = g.get_center_location()
+    g.prev_translation = g.translation
     g.translation = g.location - g.start_translation
     
     if t.distance_from_start > g.move_threshold:
       g.fail('tap', 'long_press')
       
     if g.duration > g.tap_threshold:
-      g.fail('tap', 'swipe', 'swipe_left', 'swipe_right', 'swipe_up', 'swipe_down')
+      g.fail(
+        'tap',
+        'swipe', 'swipe_left', 'swipe_right', 
+        'swipe_up', 'swipe_down',
+        'edge_swipe',
+        'edge_swipe_up', 'edge_swipe_left', 
+        'edge_swipe_right', 
+        'edge_swipe_down',)
       
     if g.is_possible('long_press') and g.duration > g.long_press_threshold:
       g.end('long_press')
@@ -268,7 +315,10 @@ class GestureMixin():
       
     if g.none_possible('tap', 'long_press', 
       'swipe', 'swipe_left', 'swipe_right', 
-      'swipe_up', 'swipe_down'):
+      'swipe_up', 'swipe_down',     
+      'edge_swipe', 'edge_swipe_up', 
+      'edge_swipe_left', 'edge_swipe_right', 
+      'edge_swipe_down',):
       g.check('pan')
       if len(g.touches) >= 2:      
         
@@ -322,20 +372,29 @@ class GestureMixin():
         return
         
       delta = g.translation
-      if abs(delta.x) > abs(delta.y):
-        g.direction = g.RIGHT if delta.x > 0 else g.LEFT
-      else:
-        g.direction = g.DOWN if delta.y > 0 else g.UP
-      swiped = False
-      gesture = 'swipe_'+g.direction
-      if g.is_possible(gesture):
-        g.end(gesture)
-        swiped = True
-      if g.is_possible('swipe'):
-        g.end('swipe')
-        swiped = True
-      if swiped:
-        return 
+      if delta is not None:
+        if abs(delta.x) > abs(delta.y):
+          g.direction = g.RIGHT if delta.x > 0 else g.LEFT
+        else:
+          g.direction = g.DOWN if delta.y > 0 else g.UP
+        swiped = False
+        gesture = 'edge_swipe_'+g.direction
+        if g.is_possible(gesture):
+          g.end(gesture)
+          swiped = True
+        else:
+          gesture = 'swipe_'+g.direction
+          if g.is_possible(gesture):
+            g.end(gesture)
+            swiped = True
+        if g.is_possible('edge_swipe'):
+          g.end('edge_swipe')
+          swiped = True
+        elif g.is_possible('swipe'):
+          g.end('swipe')
+          swiped = True
+        if swiped:
+          return 
         
           
 class GestureView(ui.View, GestureMixin):
@@ -343,10 +402,109 @@ class GestureView(ui.View, GestureMixin):
   def __init__(self, **kwargs):
     super().__init__(**kwargs)
     self.multitouch_enabled = True
+    
+    
+class TouchRelayMixin:
+  
+  def touch_began(self, touch):
+    self.relay_touch(touch, 'touch_began')
+    
+  def touch_moved(self, touch):
+    self.relay_touch(touch, 'touch_moved')
+    
+  def touch_ended(self, touch):
+    self.relay_touch(touch, 'touch_ended')
+    
+  def relay_touch(self, touch, func_name):
+    v = self.superview
+    while v:
+      f = getattr(v, func_name, None)
+      if f:
+        t = SimpleNamespace(
+          touch_id=touch.touch_id,
+          prev_location=ui.convert_point(
+            touch.prev_location,
+            self, v),
+          location=ui.convert_point(
+            touch.location,
+            self, v),
+          phase=touch.phase,
+          timestamp=touch.timestamp)
+        f(t)
+        break
+      v = self.superview
+
+    
+class TouchRelayView(ui.View, TouchRelayMixin):
+
+  def __init__(self, **kwargs):
+    super().__init__(**kwargs)
+    self.multitouch_enabled = True
+
+    
+class ZoomPanView(GestureView):
+  
+  def __init__(self, **kwargs):
+    self.background_color = 'black'
+    self.name = 'ZoomPanView'
+    super().__init__(**kwargs)
+    self.zoomer = TouchRelayView(frame=self.bounds, flex='WH')
+    super().add_subview(self.zoomer)
+    self.zoomer.objc_instance.setClipsToBounds_(False)
+    
+    self.scale = 1
+    self.rotation = 0
+    
+  def add_subview(self, view):
+    self.zoomer.add_subview(view)
+
+  def on_pan(self, data):
+    # Use translation instead of location to
+    # not be sensitive to additional touches
+    if data.changed:
+      self.zoomer.center += data.translation - data.prev_translation
+
+  def on_pinch(self, data):
+    if data.began:
+      self.start_scale = self.scale
+    if data.changed:
+      focus_pos = ui.convert_point(
+        data.location, self, self.zoomer)
+      self.scale = self.start_scale * data.scale
+      #self.zoomer.transform = ui.Transform.scale(*(self.scale,)*2)
+      self._set_transforms()
+      focus_location = ui.convert_point(
+        focus_pos, self.zoomer, self)
+      self.zoomer.center -= focus_location - data.location
+      
+  def on_rotate(self, data):
+    if data.began:
+      self.start_rotation = self.rotation
+    if data.changed:
+      focus_pos = ui.convert_point(
+        data.location, self, self.zoomer)
+      self.rotation = self.start_rotation + data.rotation
+      #self.zoomer.transform = ui.Transform.rotation(math.radians(self.rotation))
+      self._set_transforms()
+      focus_location = ui.convert_point(
+        focus_pos, self.zoomer, self)
+      self.zoomer.center -= focus_location - data.location
+      
+  def reset(self):
+    self.scale = 1
+    self.rotation = 0
+    self._set_transforms()
+    self.zoomer.center = self.bounds.center()
+      
+  def _set_transforms(self):
+      self.zoomer.transform = ui.Transform.scale(*(self.scale,)*2).concat(
+        ui.Transform.rotation(math.radians(self.rotation))
+      )
+    
   
 if __name__ == '__main__':
   
-  import copy
+  #import copy
   
   class TestView(GestureView):
     
@@ -357,10 +515,20 @@ if __name__ == '__main__':
       self.labels = {}
       self.translate_track = []
       
+      self.zpd = ZoomPanDemo(
+        frame=self.bounds,
+        flex='WH')
+      self.add_subview(self.zpd)
+      
+    def layout(self):
+      self.zpd.x = self.width
+      self.zpd.bring_to_front()
+      
     def create_labels(self):
       self.create_label('Tap')
       self.create_label('Long press')
       self.create_label('Swipe')
+      self.create_label('Edge swipe')
       self.create_label('Pan')
       self.create_label('Pinch')
       self.create_label('Rotate')
@@ -371,7 +539,7 @@ if __name__ == '__main__':
         alignment=ui.ALIGN_CENTER, 
         number_of_lines=0,
         text_color=(1,1,1,0.5))
-      l.y = self.height/6 * len(self.subviews)
+      l.y = self.height/7 * len(self.subviews)
       l.width = self.width
       self.add_subview(l)
       
@@ -382,6 +550,11 @@ if __name__ == '__main__':
       l.text = f'{gesture_name}\n{data_string}'
       self.data = data
       self.set_needs_display()
+      
+    def on_edge_swipe_left(self, data):
+      def anim():
+        self.zpd.x = 0
+      ui.animate(anim, 0.2)
 
     def on_tap(self, data):
       self.show_status(data, 'Tap')
@@ -392,9 +565,12 @@ if __name__ == '__main__':
     def on_swipe(self, data):
       self.show_status(data, 'Swipe', data.direction)
       
+    def on_edge_swipe(self, data):
+      self.show_status(data, 'Edge swipe', data.direction)
+      
     def on_pan(self, data):
       self.show_status(data, 'Pan', f'Translation: {data.translation}')
-      if data.state == data.BEGAN:
+      if data.began:
         self.translate_track = [data.translation]
       else:
         self.translate_track.append(data.translation)
@@ -458,6 +634,37 @@ if __name__ == '__main__':
           p.fill()
           ui.set_color('red')
           p.stroke()
+          
+  class ZoomPanDemo(ZoomPanView):
+    
+    def __init__(self, **kwargs):
+      super().__init__(**kwargs)
+      
+      w, h = self.bounds[2], self.bounds[3]
+      iv = ui.ImageView(
+        image=ui.Image('test:Peppers'),
+        flex='WHRTLB',
+        frame=(w/4, h/4, w/2, h/2))
+      iv.content_mode = ui.CONTENT_SCALE_ASPECT_FILL
+      self.add_subview(iv)
+      def action(sender):
+        self.reset()
+      b = ui.Button(
+        title='Reset',
+        tint_color='white',
+        background_color='blue',
+        action=action,
+        flex='RTLB'
+      )
+      b.size_to_fit()
+      b.width += 16
+      b.center = self.bounds.center()
+      self.add_subview(b)
+      
+    def on_edge_swipe_right(self, data):
+      def anim():
+        self.x = ui.get_screen_size()[0]
+      ui.animate(anim, 0.2)
       
   v = TestView()
   v.present(title_bar_color='black')
