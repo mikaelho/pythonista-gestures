@@ -444,7 +444,9 @@ class TouchRelayMixin:
 class TouchRelayView(ui.View, TouchRelayMixin):
 
   def __init__(self, **kwargs):
+    self.background_color = (0,0,0,0.00001)
     super().__init__(**kwargs)
+    self.touch_enabled = True
     self.multitouch_enabled = True
 
     
@@ -455,6 +457,7 @@ class ZoomPanView(GestureView):
     min_scale=None, max_scale=None,
     min_rotation=None, max_rotation=None, 
     **kwargs):
+
     self.pan = pan
     self.zoom = zoom
     self.rotate = rotate

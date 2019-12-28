@@ -24,47 +24,12 @@ Your handler method gets one `data` argument that always contains the attributes
 * `view` - (Pythonista) view that captured the object
 * `location` - Location of the gesture as a `ui.Point` with `x` and `y` attributes
 * `state` - State of gesture recognition; one of `Gestures.POSSIBLE/BEGAN/RECOGNIZED/CHANGED/ENDED/CANCELLED/FAILED`
+* `began`, `changed`, `ended` - convenience boolean properties to check for these states
 * `number_of_touches` - Number of touches recognized
 
-For continuous gestures, check for `data.state == Gestures.ENDED` in the handler if you are just interested that a pinch or a force press happened.
+For continuous gestures, check for `data.ended` in the handler if you are just interested that a pinch or a force press happened.
 
 All of the `add_x` methods return a `recognizer` object that can be used to remove or disable the gesture as needed, see the API. You can also remove all gestures from a view with `remove_all_gestures(view)`.
-
-#docgen-toc
-
-## Fine-tuning gesture recognition
-
-By default only one gesture recognizer will be successful, but if you want to, for example, enable both zooming (pinch) and panning at the same time, allow both recognizers:
-
-    g = Gestures()
-    
-    g.recognize_simultaneously = lambda gr, other_gr: gr == Gestures.PAN and other_gr == Gestures.PINCH
-    
-The other methods you can override are `fail` and `fail_other`, corresponding to the other [UIGestureRecognizerDelegate](https://developer.apple.com/reference/uikit/uigesturerecognizerdelegate?language=objc) methods.
-    
-All regular recognizers have convenience names that you can use like in the example above: `Gestures.TAP/PINCH/ROTATION/SWIPE/PAN/SCREEN_EDGE_PAN/LONG_PRESS`.
-
-If you need to set these per gesture, instantiate separate `Gestures` objects.
-
-## Pythonista app-closing gesture
-
-When you use the `hide_title_bar=True` attribute with `present`, you close the app with the 2-finger-swipe-down gesture. If your use case requires it, you can disable this gesture with:
-  
-    Gestures.disable_swipe_to_close(view)
-    
-where the `view` is the one you `present`.
-
-You can also replace the close gesture with another, by providing the "magic" Gestures.close_app method as the gesture handler. For example, if you feel that tapping with two thumbs is more convenient in two-handed phone use:
-  
-    Gestures().add_tap(view, Gestures.close_app, number_of_touches_required=2)
-
-## Notes
- 
-* Adding a gesture to a view automatically sets `touch_enabled=True` for that view, to avoid counter-intuitive situations where adding a gesture recognizer to e.g. ui.Label produces no results.
-* It can be hard to add gestures to ui.ScrollView, ui.TextView and the like, because they have complex multi-view structures and gestures already in place.
-* To facilitate the gesture handler callbacks from Objective-C to Python, the Gestures instance used to create the gesture must be live. You do not need to manage that as objc_util.retain_global is used to keep a global reference around. If you for some reason must track the reference manually, you can turn this behavior off with a `retain_global_reference=False` parameter for the constructor.
-* Single Gestures instance can be used to add any number of gestures to any number of views, but you can just as well create a new instance whenever and wherever you need to add a new handler.
-* If you need to create millions of dynamic gestures in a long-running app, it can be worthwhile to explicitly `remove` them when no longer needed, to avoid a memory leak.
 
 # API
 
@@ -188,3 +153,39 @@ You can also replace the close gesture with another, by providing the "magic" Ge
   used in Pythonista to end the program
   when in full screen view 
   (`hide_title_bar` set to `True`).
+
+
+## Fine-tuning gesture recognition
+
+By default only one gesture recognizer will be successful, but if you want to, for example, enable both zooming (pinch) and panning at the same time, allow both recognizers:
+
+    g = Gestures()
+    
+    g.recognize_simultaneously = lambda gr, other_gr: gr == Gestures.PAN and other_gr == Gestures.PINCH
+    
+The other methods you can override are `fail` and `fail_other`, corresponding to the other [UIGestureRecognizerDelegate](https://developer.apple.com/reference/uikit/uigesturerecognizerdelegate?language=objc) methods.
+    
+All regular recognizers have convenience names that you can use like in the example above: `Gestures.TAP/PINCH/ROTATION/SWIPE/PAN/SCREEN_EDGE_PAN/LONG_PRESS`.
+
+If you need to set these per gesture, instantiate separate `Gestures` objects.
+
+## Pythonista app-closing gesture
+
+When you use the `hide_title_bar=True` attribute with `present`, you close the app with the 2-finger-swipe-down gesture. If your use case requires it, Gestures supports disabling this gesture with:
+  
+    Gestures.disable_swipe_to_close(view)
+    
+where the `view` is the one you `present`.
+
+You can also replace the close gesture with another, by providing the "magic" `Gestures.close_app` method as the gesture handler. For example, if you feel that tapping with two thumbs is more convenient in two-handed phone use:
+  
+    Gestures().add_tap(view, Gestures.close_app, number_of_touches_required=2)
+
+## Notes
+ 
+* Adding a gesture to a view automatically sets `touch_enabled=True` for that view, to avoid counter-intuitive situations where adding a gesture recognizer to e.g. ui.Label produces no results.
+* It can be hard to add gestures to ui.ScrollView, ui.TextView and the like, because they have complex multi-view structures and gestures already in place.
+* To facilitate the gesture handler callbacks from Objective-C to Python, the Gestures instance used to create the gesture must be live. You do not need to manage that as objc_util.retain_global is used to keep a global reference around. If you for some reason must track the reference manually, you can turn this behavior off with a `retain_global_reference=False` parameter for the constructor.
+* Single Gestures instance can be used to add any number of gestures to any number of views, but you can just as well create a new instance whenever and wherever you need to add a new handler.
+* If you need to create millions of dynamic gestures in a long-running app, it can be worthwhile to explicitly `remove` them when no longer needed, to avoid a memory leak.
+

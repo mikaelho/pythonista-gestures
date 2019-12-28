@@ -47,16 +47,16 @@ class ZoomPanScene(Scene):
     
 if __name__ == '__main__':
 
-    class SpaceScene(ZoomPanScene):
+  class SpaceScene(ZoomPanScene):
+    
+    def setup(self):
+      super().setup()
       
-      def setup(self):
-        super().setup()
-        
-        ship = SpriteNode('spc:PlayerShip1Orange')
-        ship.position = self.size / 2
-        self.add_child(ship)
-        
-        
-    run(SpaceScene())
+      ship = SpriteNode('spc:PlayerShip1Orange')
+      ship.position = self.size / 2
+      self.add_child(ship)
+      
+      
+  run(SpaceScene())
 
 
