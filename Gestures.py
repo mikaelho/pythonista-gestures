@@ -116,7 +116,6 @@ phone use:
 * If you need to create millions of dynamic gestures in a long-running app,
   it can be worthwhile to explicitly `remove` them when no longer needed,
   to avoid a memory leak.
-
 '''
 
 __version__ = '1.0'
