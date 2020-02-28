@@ -618,7 +618,7 @@ if __name__ == "__main__":
     g2 = Gestures()
 
     bg = ui.View(background_color='black')
-    bg.present(hide_title_bar=True)
+    bg.present('fullscreen', hide_title_bar=True)
     g.add_tap(bg, Gestures.close_app, number_of_touches_required=2)
 
     console.hud_alert('Tap with 2 fingers to close the app')
