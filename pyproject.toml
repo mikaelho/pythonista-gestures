@@ -1,0 +1,15 @@
+[build-system]
+requires = ["flit_core >=2,<3"]
+build-backend = "flit_core.buildapi"
+
+[tool.flit.metadata]
+module = "gestures"
+author = "Mikael Honkala"
+author-email = "mikael.honkala@gmail.com"
+home-page = "https://github.com/mikaelho/pythonista-gestures"
+description-file = "README.md"
+dist-name = "pythonista-gestures"
+license = "The Unlicense"
+classifiers = [
+    "Operating System :: iOS"
+]
