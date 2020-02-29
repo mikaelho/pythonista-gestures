@@ -158,6 +158,12 @@ EDGE_RIGHT = 8
 EDGE_ALL = 15
 
 class Data():
+    """
+    Simple class that contains all the data about the gesture. See the Usage
+    section and individual gestures for information on the data included. 
+    Also provides convenience state-specific properties (`began` etc.).
+    """
+    
     def __init__(self):
         self.recognizer = self.view = self.location = self.state = \
             self.number_of_touches = self.scale = self.rotation = \
