@@ -126,7 +126,7 @@ Also provides convenience state-specific properties (`began` etc.).
   * `number_of_touches_required` - Set if more than one finger is
     required for the gesture to be recognized.
   * `minimum_press_duration` - Set to change the default 0.5-second
-    recognition treshold.
+    recognition threshold.
   * `allowable_movement` - Set to change the default 10 point maximum
   distance allowed for the gesture to be recognized.
 
