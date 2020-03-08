@@ -48,8 +48,8 @@ gestures.
   check for these states
 * `number_of_touches` - Number of touches recognized
 
-For continuous gestures, check for `data.ended` in the handler if you are
-just interested that a pinch or a force press happened.
+For continuous gestures, check for `data.began` or `data.ended` in the handler 
+if you are just interested that a pinch or a force press happened.
 
 All of the gesture-adding methods return an object that can be used
 to remove or disable the gesture as needed, see the API. You can also remove
@@ -188,7 +188,7 @@ Also provides convenience state-specific properties (`began` etc.).
   * `velocity` - Current velocity of the rotation gesture as radians
     per second.
 
-#### `swipe(view, action, direction=None, number_of_touches_required=None)`
+#### `swipe(view, action, direction=None, number_of_touches_required=None, min_distance=None, max_distance=None)`
 
   Call `action` when a swipe gesture is recognized for the `view`.
   
@@ -198,6 +198,12 @@ Also provides convenience state-specific properties (`began` etc.).
     `gestures.RIGHT/LEFT/UP/DOWN`, or a list of multiple directions.
   * `number_of_touches_required` - Set if you need to change the minimum
     number of touches required.
+  * `min_distance` - Minimum distance the swipe gesture must travel in
+    order to be recognized. Default is 50.
+    This uses an undocumented recognizer attribute.
+  * `max_distance` - Maximum distance the swipe gesture can travel in
+    order to still be recognized. Default is a very large number.
+    This uses an undocumented recognizer attribute.
   
   If set to recognize swipes to multiple directions, the handler
   does not receive any indication of the direction of the swipe. Add
@@ -254,6 +260,22 @@ and zooming (pinching):
     pincher = pinch(view, pinch_handler)
     panner.together_with(pincher)
 
+## Using lambdas
+
+If there in existing method that you just want to trigger with a gesture,
+often you do not need to create an extra handler function.
+This works best with the discrete `tap` and `swipe` gestures where we do not
+need to worry with the state of the gesture.
+
+    tap(label, lambda _: setattr(label, 'text', 'Tapped'))
+
+The example below triggers some kind of a database refresh when a long press is
+detected on a button.
+Anything more complicated than this is probably worth creating a separate
+function.
+    
+    long_press(button, lambda data: db.refresh() if data.began else None)
+
 ## Pythonista app-closing gesture
 
 When you use the `hide_title_bar=True` attribute with `present`, you close
@@ -282,7 +304,8 @@ phone use:
   
 ## Versions:
     
+* 1.1 - Adds distance parameters to swipe gestures.
 * 1.0 - First version released to PyPi. 
-  Breaks backwards compatibility in syntax, multi-recognizer coordination and
-  removed force press support.
+  Breaks backwards compatibility in syntax, adds multi-recognizer coordination,
+  and removes force press support.
 

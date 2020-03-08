@@ -49,8 +49,8 @@ gestures.
   check for these states
 * `number_of_touches` - Number of touches recognized
 
-For continuous gestures, check for `data.ended` in the handler if you are
-just interested that a pinch or a force press happened.
+For continuous gestures, check for `data.began` or `data.ended` in the handler 
+if you are just interested that a pinch or a force press happened.
 
 All of the gesture-adding methods return an object that can be used
 to remove or disable the gesture as needed, see the API. You can also remove
@@ -78,6 +78,22 @@ and zooming (pinching):
     panner = pan(view, pan_handler)
     pincher = pinch(view, pinch_handler)
     panner.together_with(pincher)
+
+## Using lambdas
+
+If there in existing method that you just want to trigger with a gesture,
+often you do not need to create an extra handler function.
+This works best with the discrete `tap` and `swipe` gestures where we do not
+need to worry with the state of the gesture.
+
+    tap(label, lambda _: setattr(label, 'text', 'Tapped'))
+
+The example below triggers some kind of a database refresh when a long press is
+detected on a button.
+Anything more complicated than this is probably worth creating a separate
+function.
+    
+    long_press(button, lambda data: db.refresh() if data.began else None)
 
 ## Pythonista app-closing gesture
 
@@ -107,12 +123,13 @@ phone use:
   
 ## Versions:
     
+* 1.1 - Adds distance parameters to swipe gestures.
 * 1.0 - First version released to PyPi. 
-  Breaks backwards compatibility in syntax, multi-recognizer coordination and
-  removed force press support.
+  Breaks backwards compatibility in syntax, adds multi-recognizer coordination,
+  and removes force press support.
 """
 
-__version__ = '1.0'
+__version__ = '1.1'
 
 import types
 
@@ -217,9 +234,9 @@ def is_objc_type(objc_instance, objc_class):
             
 def gestureAction(_self, _cmd):
     slf = ObjCInstance(_self)
-    view = slf.context.view
-    recognizer = slf.context.recognizer
-    handler_func = slf.context.handler_func
+    view = slf.view
+    recognizer = slf.recognizer
+    handler_func = slf.handler_func
     data = Data()
     data.recognizer = recognizer
     data.view = view
@@ -247,7 +264,7 @@ def gestureRecognizer_shouldRecognizeSimultaneouslyWithGestureRecognizer_(
         _self, _sel, _gr, _other_gr):
     slf = ObjCInstance(_self)
     other_gr = ObjCInstance(_other_gr)
-    return other_gr in slf.context.other_recognizers
+    return other_gr in slf.other_recognizers
 
 GestureHandler = create_objc_class(
     'GestureHandler',
@@ -271,26 +288,25 @@ def _get_handler(recognizer_class, view, handler_func):
             handler, 'gestureAction').autorelease()
         view.objc_instance.addGestureRecognizer_(recognizer)
 
-    handler.context = types.SimpleNamespace(
-        view=view,
-        recognizer=recognizer,
-        handler_func=handler_func,
-        other_recognizers=[])
+    handler.view = view
+    handler.recognizer = recognizer
+    handler.handler_func = handler_func
+    handler.other_recognizers = []
 
     @on_main_thread
     def before(self, other):
-        other.context.recognizer.requireGestureRecognizerToFail_(
-            self.context.recognizer)
+        other.recognizer.requireGestureRecognizerToFail_(
+            self.recognizer)
 
     @on_main_thread
     def after(self, other):
-        self.context.recognizer.requireGestureRecognizerToFail_(
-            other.context.recognizer)
+        self.recognizer.requireGestureRecognizerToFail_(
+            other.recognizer)
             
     @on_main_thread
     def together_with(self, other):
-        self.context.other_recognizers.append(other.context.recognizer)
-        self.context.recognizer.delegate = self
+        self.other_recognizers.append(other.recognizer)
+        self.recognizer.delegate = self
             
     setattr(handler, 'before', types.MethodType(before, handler))
     setattr(handler, 'after', types.MethodType(after, handler))
@@ -312,7 +328,7 @@ def tap(view, action,
     """
     handler = _get_handler(UITapGestureRecognizer, view, action)
 
-    recognizer = handler.context.recognizer
+    recognizer = handler.recognizer
     if number_of_taps_required:
         recognizer.numberOfTapsRequired = number_of_taps_required
     if number_of_touches_required:
@@ -353,7 +369,7 @@ def long_press(view, action,
     """
     handler = _get_handler(UILongPressGestureRecognizer, view, action)
 
-    recognizer = handler.context.recognizer
+    recognizer = handler.recognizer
     if number_of_taps_required:
         recognizer.numberOfTapsRequired = number_of_taps_required
     if number_of_touches_required:
@@ -387,7 +403,7 @@ def pan(view, action,
     """
     handler = _get_handler(UIPanGestureRecognizer, view, action)
 
-    recognizer = handler.context.recognizer
+    recognizer = handler.recognizer
     if minimum_number_of_touches:
         recognizer.minimumNumberOfTouches = minimum_number_of_touches
     if maximum_number_of_touches:
@@ -411,7 +427,7 @@ def edge_pan(view, action, edges):
     """
     handler = _get_handler(UIScreenEdgePanGestureRecognizer, view, action)
 
-    handler.context.recognizer.edges = edges
+    handler.recognizer.edges = edges
 
     return handler
 
@@ -452,7 +468,9 @@ def rotation(view, action):
 @on_main_thread
 def swipe(view, action,
         direction=None,
-        number_of_touches_required=None):
+        number_of_touches_required=None,
+        min_distance=None,
+        max_distance=None):
     """ Call `action` when a swipe gesture is recognized for the `view`.
 
     Additional parameters:
@@ -461,6 +479,12 @@ def swipe(view, action,
       `gestures.RIGHT/LEFT/UP/DOWN`, or a list of multiple directions.
     * `number_of_touches_required` - Set if you need to change the minimum
       number of touches required.
+    * `min_distance` - Minimum distance the swipe gesture must travel in
+      order to be recognized. Default is 50.
+      This uses an undocumented recognizer attribute.
+    * `max_distance` - Maximum distance the swipe gesture can travel in
+      order to still be recognized. Default is a very large number.
+      This uses an undocumented recognizer attribute.
 
     If set to recognize swipes to multiple directions, the handler
     does not receive any indication of the direction of the swipe. Add
@@ -469,7 +493,7 @@ def swipe(view, action,
     """
     handler = _get_handler(UISwipeGestureRecognizer, view, action)
 
-    recognizer = handler.context.recognizer
+    recognizer = handler.recognizer
     if direction:
         combined_dir = direction
         if isinstance(direction, list):
@@ -479,24 +503,28 @@ def swipe(view, action,
         recognizer.direction = combined_dir
     if number_of_touches_required:
         recognizer.numberOfTouchesRequired = number_of_touches_required
+    if min_distance:
+        recognizer.minimumPrimaryMovement = min_distance
+    if max_distance:
+        recognizer.maximumPrimaryMovement = max_distance
 
     return handler
 
 @on_main_thread
 def disable(handler):
     """ Disable a recognizer temporarily. """
-    handler.context.recognizer.enabled = False
+    handler.recognizer.enabled = False
 
 @on_main_thread
 def enable(handler):
     """ Enable a disabled gesture recognizer. There is no error if the
     recognizer is already enabled. """
-    handler.context.recognizer.enabled = True
+    handler.recognizer.enabled = True
 
 @on_main_thread
 def remove(view, handler):
     ''' Remove the recognizer from the view permanently. '''
-    view.objc_instance.removeGestureRecognizer_(handler.context.recognizer)
+    view.objc_instance.removeGestureRecognizer_(handler.recognizer)
 
 @on_main_thread
 def remove_all_gestures(view):
