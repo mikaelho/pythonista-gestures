@@ -156,7 +156,11 @@ NSItemProvider = ObjCClass('NSItemProvider')
 UIDragItem = ObjCClass('UIDragItem')
 UIDragInteraction = ObjCClass('UIDragInteraction')
 UIDropInteraction = ObjCClass('UIDropInteraction')
+UIDropProposal = ObjCClass('UIDropProposal')
 NSItemProvider = ObjCClass('NSItemProvider')
+UIImagePNGRepresentation = c.UIImagePNGRepresentation
+UIImagePNGRepresentation.restype = c_void_p
+UIImagePNGRepresentation.argtypes = [c_void_p]
 
 # Constants
 
@@ -287,10 +291,6 @@ class ObjCPlus:
             )
         
         instance = objc_class.alloc().init()
-        '''
-        with open(os.devnull, 'w') as fp:
-            print('foo', file=fp)
-        '''
 
         for key in dir(cls):
             value = getattr(cls, key)
@@ -442,7 +442,7 @@ class UIDragInteractionDelegate(ObjCDelegate):
 class UIDropInteractionDelegate(ObjCDelegate):
     
     def __init__(self, view, handler_func, accept=None):
-        
+        self.accept_type = None
         if type(accept) is type:
             if accept is str:
                 self.accept_type = NSString
@@ -477,35 +477,54 @@ class UIDropInteractionDelegate(ObjCDelegate):
         proposal = 2 # UIDropOperationCopy
         accept_func = self.functions['accept']
 
-        if accept_func is not None:
-            for item in session.items():
-                data = to_pyobject(item)
-                if not data is None:
+        if session.localDragSession():
+            if accept_func is not None:
+                for item in session.items():
+                    data = to_pyobject(item)
                     payload = data['payload']
                     sender = data['sender']
                     if not accept_func(payload, sender, self.view):
                         proposal = 1 # UIDropOperationForbidden
-                else:
-                    item_itemprovider = item.itemProvider()        
-                    if not itemProvider.canLoadObjectOfClass(self.accept_type):
-                        proposal = 1 # UIDropOperationForbidden
+        else:
+            if (self.accept_type is None or
+            not session.canLoadObjectsOfClass(self.accept_type)):
+                    proposal = 1 # UIDropOperationForbidden
 
-        return ObjCClass('UIDropProposal').alloc().initWithDropOperation(proposal).ptr
+        return UIDropProposal.alloc().initWithDropOperation(proposal).ptr
         
     def dropInteraction_performDrop_(_self, _cmd, _interaction, _session):
         self = ObjCInstance(_self)
         session = ObjCInstance(_session)
-
-        for item in session.items():
-            data = to_pyobject(item)
-            payload = data['payload']
-            sender = data['sender']
-            handler = self.functions['handler']
-            #try:
-            handler(payload, sender, self.view)
-            #except Exception as e:
-            #    print(e)
-      
+        handler = self.functions['handler']
+        
+        if session.localDragSession():
+            for item in session.items():
+                data = to_pyobject(item)
+                payload = data['payload']
+                sender = data['sender']
+                handler(payload, sender, self.view)
+        else:
+            if self.accept_type is not None:
+                
+                def completion_handler(_cmd, _object, _error):
+                    obj = ObjCInstance(_object)
+                    payload = None
+                    if is_objc_type(obj, NSString):
+                        payload = str(obj)
+                    elif is_objc_type(obj, UIImage):
+                        payload = ui.Image.from_data(uiimage_to_png(obj))
+                    handler(payload, None, self.view)
+                handler_block = ObjCBlock(
+                    completion_handler, restype=None,
+                    argtypes=[c_void_p, c_void_p, c_void_p])
+                retain_global(handler_block)
+                
+                for item in session.items():
+                    provider = item.itemProvider()
+                    provider.loadObjectOfClass_completionHandler_(
+                        self.accept_type, handler_block)
+                    break
+                    
         
 @on_main_thread
 def drag(view, payload, allow_others=False):
@@ -887,7 +906,7 @@ if __name__ == '__main__':
 
     label_count = -1
 
-    def create_label(title):
+    def create_label(title, instance=None):
         global label_count
         label_count += 1
         label_w = 175
@@ -900,19 +919,22 @@ if __name__ == '__main__':
         line = math.floor(label_count / labels_per_line)
         column = label_count - line * labels_per_line
 
-        l = ui.Label(
-            text=title,
-            background_color='grey',
-            text_color='white',
-            alignment=ui.ALIGN_CENTER,
-            number_of_lines=0,
-            frame=(
-                left_margin + column * label_w_with_gap,
-                gap + line * label_h_with_gap,
-                label_w, label_h
-            ))
-        v.add_subview(l)
-        return l
+        if instance is None:
+            instance = ui.Label(
+                text=title,
+                background_color='grey',
+                text_color='white',
+                alignment=ui.ALIGN_CENTER,
+                number_of_lines=0
+            )
+        
+        instance.frame = (
+            left_margin + column * label_w_with_gap,
+            gap + line * label_h_with_gap,
+            label_w, label_h
+        )
+        v.add_subview(instance)
+        return instance
 
 
     tap_l = create_label('Tap')
@@ -949,25 +971,32 @@ if __name__ == '__main__':
     pinch_r = pinch(pan_and_pinch_l, pan_and_pinch_handler)
     pan_r.together_with(pinch_r)
  
-    drag_l = create_label('Drag')
-    drop_l = create_label('Drop')
+    drag_dict_l = create_label('Drag dict')
+    drag_image_l = create_label('Drag image')
+    drop_dict_l = create_label('Drop dict')
+    iv = ui.ImageView(
+        image=ui.Image('iow:image_32'),
+        background_color='grey',
+        content_mode=ui.CONTENT_CENTER,
+    )
+    iv.objc_instance.setClipsToBounds_(True)
+    drop_image_l = create_label('Image drop', iv)
  
-    def get_dragging(sender):
-       sender.text = 'Dragging'
-       #return ui.Image('iob:drag_24')
-       return { 'message': 'Success'}
-
-    drag(drag_l, get_dragging)
+    drag(drag_dict_l, {'message': 'Success'})
     
-    def dropped(data, sender, receiver):
-        sender.text = 'Drag'
+    drag(drag_image_l, ui.Image('iow:ios7_checkmark_32'))
+    
+    def dict_dropped(data, sender, receiver):
         receiver.text = f"Drop\n{data['message']}"
         ui.delay(lambda: setattr(receiver, 'text', 'Drop'), 2.0)
 
-    drop(drop_l, dropped, accept=dict)
+    drop(drop_dict_l, dict_dropped, accept=dict)
     
-    def ext_dropped(data, sender, receiver):
-        ...
+    def image_dropped(data, sender, receiver):
+        receiver.image = data
+        ui.delay(lambda:
+            setattr(receiver, 'image', ui.Image('iow:image_24')),
+            2.0
+        )
         
-    ext_drop_l = create_label('External drop')
-    drop(ext_drop_l, None, accept=ui.Image)
+    drop(drop_image_l, image_dropped, accept=ui.Image)
