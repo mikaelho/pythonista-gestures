@@ -131,6 +131,10 @@ phone use:
 
 __version__ = '1.1'
 
+import ctypes
+import functools
+import inspect
+import os
 import types
 
 import ui
@@ -145,6 +149,14 @@ UIScreenEdgePanGestureRecognizer = ObjCClass('UIScreenEdgePanGestureRecognizer')
 UIPinchGestureRecognizer = ObjCClass('UIPinchGestureRecognizer')
 UIRotationGestureRecognizer = ObjCClass('UIRotationGestureRecognizer')
 UISwipeGestureRecognizer = ObjCClass('UISwipeGestureRecognizer')
+
+#  Drag and drop classes
+
+NSItemProvider = ObjCClass('NSItemProvider')
+UIDragItem = ObjCClass('UIDragItem')
+UIDragInteraction = ObjCClass('UIDragInteraction')
+UIDropInteraction = ObjCClass('UIDropInteraction')
+NSItemProvider = ObjCClass('NSItemProvider')
 
 # Constants
 
@@ -173,6 +185,12 @@ EDGE_LEFT = 2
 EDGE_BOTTOM = 4
 EDGE_RIGHT = 8
 EDGE_ALL = 15
+
+# Cross-app drop accepted input identifiers
+
+DROP_TEXT = NSString
+DROP_IMAGE = UIImage
+
 
 class Data():
     """
@@ -229,70 +247,124 @@ class Data():
     def failed(self):
         return self.state == FAILED
             
+            
+class ObjCPlus:
+    
+    def __new__(cls, *args, **kwargs):
+        objc_class = getattr(cls, '_objc_class', None)
+        if objc_class is None:
+            objc_class_name = cls.__name__ + '_ObjC'
+            objc_superclass = getattr(
+                cls, '_objc_superclass', NSObject)
+            objc_debug = getattr(cls, '_objc_debug', True)
+            
+            #'TempClass_'+str(uuid.uuid4())[-12:]
+            
+            objc_methods = []
+            objc_classmethods = []
+            for key in cls.__dict__:
+                value = getattr(cls, key)
+                if (inspect.isfunction(value) and 
+                    '_self' in inspect.signature(value).parameters
+                ):
+                    if getattr(value, '__self__', None) == cls:
+                        objc_classmethods.append(value)
+                    else:
+                        objc_methods.append(value)
+            if ObjCDelegate in cls.__mro__:
+                objc_protocols = cls.__name__
+            else:
+                objc_protocols = getattr(cls, '_objc_protocols', [])
+            if not type(objc_protocols) is list:
+                objc_protocols = [objc_protocols]
+            cls._objc_class = objc_class = create_objc_class(
+                objc_class_name,
+                superclass=objc_superclass,
+                methods=objc_methods,
+                classmethods=objc_classmethods,
+                protocols=objc_protocols,
+                debug=objc_debug
+            )
+        
+        instance = objc_class.alloc().init()
+        '''
+        with open(os.devnull, 'w') as fp:
+            print('foo', file=fp)
+        '''
+
+        for key in dir(cls):
+            value = getattr(cls, key)
+            if inspect.isfunction(value):
+                if (not key.startswith('__') and 
+                not '_self' in inspect.signature(value).parameters):
+                    setattr(instance, key, types.MethodType(value, instance))
+                if key == '__init__':
+                    value(instance, *args, **kwargs)
+
+        return instance
+
+        
+class ObjCDelegate(ObjCPlus):
+    """ If you inherit from this class, the class name must match the delegate 
+    protocol name. """
+            
+            
 def is_objc_type(objc_instance, objc_class):
     return objc_instance.isKindOfClass_(objc_class.ptr)
-            
-def gestureAction(_self, _cmd):
-    slf = ObjCInstance(_self)
-    view = slf.view
-    recognizer = slf.recognizer
-    handler_func = slf.handler_func
-    data = Data()
-    data.recognizer = recognizer
-    data.view = view
-    location = recognizer.locationInView_(view.objc_instance)
-    data.location = ui.Point(location.x, location.y)
-    data.state = recognizer.state()
-    data.number_of_touches = recognizer.numberOfTouches()
+
+
+class UIGestureRecognizerDelegate(ObjCDelegate):
     
-    if (is_objc_type(recognizer, UIPanGestureRecognizer) or 
-    is_objc_type(recognizer, UIScreenEdgePanGestureRecognizer)):
-        trans = recognizer.translationInView_(ObjCInstance(view))
-        vel = recognizer.velocityInView_(ObjCInstance(view))
-        data.translation = ui.Point(trans.x, trans.y)
-        data.velocity = ui.Point(vel.x, vel.y)
-    elif is_objc_type(recognizer, UIPinchGestureRecognizer):
-        data.scale = recognizer.scale()
-        data.velocity = recognizer.velocity()
-    elif is_objc_type(recognizer, UIRotationGestureRecognizer):
-        data.rotation = recognizer.rotation()
-        data.velocity = recognizer.velocity()
+    def __init__(self, recognizer_class, view, handler_func):
+        self.view = view
+        self.handler_func = handler_func
+        self.other_recognizers = []
+        
+        view.touch_enabled = True
 
-    handler_func(data)
+        if handler_func == 'close':
+            self.recognizer = replace_close_gesture(view, recognizer_class)
+        else:
+            self.recognizer = recognizer_class.alloc().initWithTarget_action_(
+                self, 'gestureAction').autorelease()
+            view.objc_instance.addGestureRecognizer_(self.recognizer)
+
+        retain_global(self)
     
-def gestureRecognizer_shouldRecognizeSimultaneouslyWithGestureRecognizer_(
-        _self, _sel, _gr, _other_gr):
-    slf = ObjCInstance(_self)
-    other_gr = ObjCInstance(_other_gr)
-    return other_gr in slf.other_recognizers
-
-GestureHandler = create_objc_class(
-    'GestureHandler',
-    superclass=NSObject,
-    methods=[
-        gestureAction,
-        gestureRecognizer_shouldRecognizeSimultaneouslyWithGestureRecognizer_
-    ],
-    protocols=['UIGestureRecognizerDelegate']
-)
-
-def _get_handler(recognizer_class, view, handler_func):
-    view.touch_enabled = True
-    handler = GestureHandler.new().autorelease()
-    retain_global(handler)
-
-    if handler_func == 'close':
-        recognizer = replace_close_gesture(view, recognizer_class)
-    else:
-        recognizer = recognizer_class.alloc().initWithTarget_action_(
-            handler, 'gestureAction').autorelease()
-        view.objc_instance.addGestureRecognizer_(recognizer)
-
-    handler.view = view
-    handler.recognizer = recognizer
-    handler.handler_func = handler_func
-    handler.other_recognizers = []
-
+    def gestureAction(_self, _cmd):
+        self = ObjCInstance(_self)
+        view = self.view
+        recognizer = self.recognizer
+        handler_func = self.handler_func
+        data = Data()
+        data.recognizer = recognizer
+        data.view = view
+        location = recognizer.locationInView_(view.objc_instance)
+        data.location = ui.Point(location.x, location.y)
+        data.state = recognizer.state()
+        data.number_of_touches = recognizer.numberOfTouches()
+        
+        if (is_objc_type(recognizer, UIPanGestureRecognizer) or 
+        is_objc_type(recognizer, UIScreenEdgePanGestureRecognizer)):
+            trans = recognizer.translationInView_(ObjCInstance(view))
+            vel = recognizer.velocityInView_(ObjCInstance(view))
+            data.translation = ui.Point(trans.x, trans.y)
+            data.velocity = ui.Point(vel.x, vel.y)
+        elif is_objc_type(recognizer, UIPinchGestureRecognizer):
+            data.scale = recognizer.scale()
+            data.velocity = recognizer.velocity()
+        elif is_objc_type(recognizer, UIRotationGestureRecognizer):
+            data.rotation = recognizer.rotation()
+            data.velocity = recognizer.velocity()
+    
+        handler_func(data)
+        
+    def gestureRecognizer_shouldRecognizeSimultaneouslyWithGestureRecognizer_(
+            _self, _sel, _gr, _other_gr):
+        self = ObjCInstance(_self)
+        other_gr = ObjCInstance(_other_gr)
+        return other_gr in self.other_recognizers
+        
     @on_main_thread
     def before(self, other):
         other.recognizer.requireGestureRecognizerToFail_(
@@ -307,12 +379,170 @@ def _get_handler(recognizer_class, view, handler_func):
     def together_with(self, other):
         self.other_recognizers.append(other.recognizer)
         self.recognizer.delegate = self
-            
-    setattr(handler, 'before', types.MethodType(before, handler))
-    setattr(handler, 'after', types.MethodType(after, handler))
-    setattr(handler, 'together_with', types.MethodType(together_with, handler))
 
-    return handler
+drag_and_drop_prefix = 'py_object_'
+
+def to_pyobject(item):
+    item = ObjCInstance(item)
+    try:
+        data = item.localObject()
+        if data is None: return None
+        if not str(data).startswith(drag_and_drop_prefix):
+            return None
+        address_str = str(data)[len(drag_and_drop_prefix):]
+        address = int(address_str)
+        result = ctypes.cast(address, ctypes.py_object).value
+        return result
+    except Exception as e:
+        return None
+
+
+class UIDragInteractionDelegate(ObjCDelegate):
+    
+    def __init__(self, view, data, allow_others):
+        if not callable(data):
+            data = functools.partial(lambda d, sender: d, data)
+        self.data = { 'payload_func': data }
+        self.view = view
+        view.touch_enabled = True
+        draginteraction = UIDragInteraction.alloc().initWithDelegate_(self)
+        draginteraction.setEnabled(True)
+        draginteraction.setAllowsSimultaneousRecognitionDuringLift_(allow_others)
+        view.objc_instance.addInteraction(draginteraction)
+            
+        retain_global(self)
+    
+    def dragInteraction_itemsForBeginningSession_(_self, _cmd,
+    _interaction, _session):
+        self = ObjCInstance(_self)
+        session = ObjCInstance(_session)
+        payload = self.data['payload_func'](self.view)
+        # Retain reference to potentially ephemeral data
+        
+        self.content_actual = {
+            'payload': payload,
+            'sender': self.view
+        }
+        
+        external_payload = ''
+        
+        if type(payload) is str:
+            external_payload = payload
+        elif type(payload) in [ui.Image]:
+            external_payload = ObjCInstance(payload)
+        provider = NSItemProvider.alloc().initWithObject(external_payload)
+        item = UIDragItem.alloc().initWithItemProvider(provider)
+        item.setLocalObject_(
+            str(drag_and_drop_prefix) +  
+            str(id(self.content_actual)))
+        object_array = NSArray.arrayWithObject(item)
+        return object_array.ptr
+   
+
+class UIDropInteractionDelegate(ObjCDelegate):
+    
+    def __init__(self, view, handler_func, accept=None):
+        
+        if type(accept) is type:
+            accept = functools.partial(
+                lambda dtype, d, s, r: type(d) is dtype, accept)
+        self.functions = {
+            'handler': handler_func,
+            'accept': accept
+        }
+        self.view = view
+        view.touch_enabled = True
+        
+        dropinteraction = UIDropInteraction.alloc().initWithDelegate_(self)
+        view.objc_instance.addInteraction(dropinteraction)
+        retain_global(self)
+        
+    def dropInteraction_canHandleSession_(_self, _cmd, _interaction, _session):
+        return True
+        '''
+        session = ObjCInstance(_session)
+        for item in session.items():
+            if not to_pyobject(item) is None:
+                return True
+        return False
+        '''
+        
+    def dropInteraction_sessionDidUpdate_(_self, _cmd, _interaction, _session):
+        self = ObjCInstance(_self)
+        session = ObjCInstance(_session)
+        proposal = 2 # UIDropOperationCopy
+        accept_func = self.functions['accept']
+
+        if accept_func is not None:
+            for item in session.items():
+                data = to_pyobject(item)
+                payload = data['payload']
+                sender = data['sender']
+                if not accept_func(payload, sender, self.view):
+                    proposal = 1 # UIDropOperationForbidden
+
+        return ObjCClass('UIDropProposal').alloc().initWithDropOperation(proposal).ptr
+        
+    def dropInteraction_performDrop_(_self, _cmd, _interaction, _session):
+        self = ObjCInstance(_self)
+        session = ObjCInstance(_session)
+
+        for item in session.items():
+            data = to_pyobject(item)
+            payload = data['payload']
+            sender = data['sender']
+            handler = self.functions['handler']
+            #try:
+            handler(payload, sender, self.view)
+            #except Exception as e:
+            #    print(e)
+      
+        
+@on_main_thread
+def drag(view, payload, allow_others=False):
+    """ Sets the `view` to be the sender in a drag and drop operation. Dragging
+    starts with a long press.
+    
+    For within-app drag and drop, `payload` can be anything, and it is passed
+    by reference.
+    
+    If the `payload` is a text string or a `ui.Image`, it can be dragged
+    (copied) to another app (on iPad).
+    There is also built-in support for dropping text to any `ui.TextField` or
+    `ui.TextView`. 
+    
+    If `payload` is a function, it is called at the time when the drag starts.
+    The function receives one argument, the sending `view`, and must return the
+    data to be dragged.
+
+    Additional parameters:
+
+    * `allow_others` - Set to True if other gestures attached to the view
+    should be prioritized over the dragging.
+    """
+    
+    UIDragInteractionDelegate(view, payload, allow_others)
+    
+@on_main_thread
+def drop(view, action, accept=None):
+    """ Sets the `view` as a drop target. `action` function is called with
+    three arguments:
+        
+    * `data` - The dragged data.
+    * `sender` - Source view of the drag and drop. `None` for drags between
+    apps.
+    * `receiver` - Same as `view`.
+    
+    Additional parameters:
+
+    * `accept` - Control which data will be accepted for dropping.
+    Either an accepted type like `dict` or `ui.Image`, or a function
+    that is called when a drag enters the view. Function gets same parameters
+    as the main handler, and should return False if the view should not accept
+    the drop.
+    """
+    
+    UIDropInteractionDelegate(view, action, accept)
 
 @on_main_thread
 def tap(view, action, 
@@ -326,7 +556,7 @@ def tap(view, action,
     * `number_of_touches_required` - Set if more than one finger is
       required for the gesture to be recognized.
     """
-    handler = _get_handler(UITapGestureRecognizer, view, action)
+    handler = UIGestureRecognizerDelegate(UITapGestureRecognizer, view, action)
 
     recognizer = handler.recognizer
     if number_of_taps_required:
@@ -367,7 +597,7 @@ def long_press(view, action,
     * `allowable_movement` - Set to change the default 10 point maximum
     distance allowed for the gesture to be recognized.
     """
-    handler = _get_handler(UILongPressGestureRecognizer, view, action)
+    handler = UIGestureRecognizerDelegate(UILongPressGestureRecognizer, view, action)
 
     recognizer = handler.recognizer
     if number_of_taps_required:
@@ -401,7 +631,7 @@ def pan(view, action,
     * `velocity` - Current velocity of the pan gesture as points per
       second (a `ui.Point` with `x` and `y` attributes).
     """
-    handler = _get_handler(UIPanGestureRecognizer, view, action)
+    handler = UIGestureRecognizerDelegate(UIPanGestureRecognizer, view, action)
 
     recognizer = handler.recognizer
     if minimum_number_of_touches:
@@ -425,7 +655,7 @@ def edge_pan(view, action, edges):
     Handler `action` receives the same gesture-specific attributes in
     the `data` argument as pan gestures, see `pan`.
     """
-    handler = _get_handler(UIScreenEdgePanGestureRecognizer, view, action)
+    handler = UIGestureRecognizerDelegate(UIScreenEdgePanGestureRecognizer, view, action)
 
     handler.recognizer.edges = edges
 
@@ -444,7 +674,7 @@ def pinch(view, action):
     * `velocity` - Current velocity of the pinch gesture as scale
       per second.
     """
-    handler = _get_handler(UIPinchGestureRecognizer, view, action)
+    handler = UIGestureRecognizerDelegate(UIPinchGestureRecognizer, view, action)
 
     return handler
 
@@ -461,7 +691,7 @@ def rotation(view, action):
     * `velocity` - Current velocity of the rotation gesture as radians
       per second.
     """
-    handler = _get_handler(UIRotationGestureRecognizer, view, action)
+    handler = UIGestureRecognizerDelegate(UIRotationGestureRecognizer, view, action)
 
     return handler
 
@@ -491,7 +721,7 @@ def swipe(view, action,
     multiple recognizers if you need to differentiate between the
     directions.
     """
-    handler = _get_handler(UISwipeGestureRecognizer, view, action)
+    handler = UIGestureRecognizerDelegate(UISwipeGestureRecognizer, view, action)
 
     recognizer = handler.recognizer
     if direction:
@@ -709,3 +939,26 @@ if __name__ == '__main__':
         maximum_number_of_touches=2)
     pinch_r = pinch(pan_and_pinch_l, pan_and_pinch_handler)
     pan_r.together_with(pinch_r)
+ 
+    drag_l = create_label('Drag')
+    drop_l = create_label('Drop')
+ 
+    def get_dragging(sender):
+       sender.text = 'Dragging'
+       #return ui.Image('iob:drag_24')
+       return { 'message': 'Success'}
+
+    drag(drag_l, get_dragging)
+    
+    def dropped(data, sender, receiver):
+        sender.text = 'Drag'
+        receiver.text = f"Drop\n{data['message']}"
+        ui.delay(lambda: setattr(receiver, 'text', 'Drop'), 2.0)
+
+    drop(drop_l, dropped, accept=dict)
+    
+    def ext_dropped(data, sender, receiver):
+        ...
+        
+    ext_drop_l = create_label('External drop')
+    drop(ext_drop_l, None, accept=ui.Image)
