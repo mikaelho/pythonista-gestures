@@ -5,10 +5,9 @@ Gestures wrapper for iOS
 
 # Gestures for the Pythonista iOS app
  
-This is a convenience class for enabling gestures in Pythonista UI
-applications, including built-in views. Main intent here has been to make
-them Python friendly, hiding all the Objective-C stuff. All gestures
-correspond to the standard Apple gestures.
+This is a convenience class for enabling gestures, including drag and drop
+support, in Pythonista UI applications. Main intent here has been to make
+them Python friendly, hiding all the Objective-C details.
 
 Run the file on its own to see a demo of the supported gestures.
 
@@ -21,6 +20,14 @@ Copy from [GitHub](https://github.com/mikaelho/pythonista-gestures), or
     pip install pythonista-gestures
 
 with [stash](https://github.com/ywangd/stash).
+
+## Versions:
+
+* 1.2 - Adds drag and drop support.  
+* 1.1 - Adds distance parameters to swipe gestures.
+* 1.0 - First version released to PyPi. 
+  Breaks backwards compatibility in syntax, adds multi-recognizer coordination,
+  and removes force press support.
 
 ## Usage
 
@@ -56,7 +63,36 @@ All of the gesture-adding methods return an object that can be used
 to remove or disable the gesture as needed, see the API. You can also remove
 all gestures from a view with `remove_all_gestures(view)`.
 
-#docgen-toc
+## Drag and drop
+
+This module supports dragging and dropping both within a Pythonista app and
+between Pythonista and another app (only possible on iPads). These two cases
+are handled differently:
+    
+* For in-app drops, Apple method of relaying objects is skipped completely,
+  and you can refer to _any_ Python object to be dropped to the target view.
+* For cross-app drops, we have to conform to Apple method of managing data.
+  Currently only plain text and image drops are supported, in either direction.
+* It is also good to note that `ui.TextField` and `ui.TextView` views natively
+  act as receivers for both in-app and cross-app plain text drag and drop.
+
+View is set to be a sender for a drap and drop operation with the `drag`
+function. Drag starts with a long press, and can end in any view that has been
+set as a receiver with the `drop` function. Views show the readiness to receive
+data with a green "plus" sign. You can accept only specific types of data;
+incompatible drop targets show a grey "forbidden" sign.
+
+Following example covers setting up an in-app drag and drop operation between
+two labels. To repeat, in the in-app case, the simple string could replaced by
+any Python object of any complexity, passed by reference:
+    
+    drag(sender_label, "Important data")
+    
+    drop(receiver_label,
+        lambda data, sender, receiver: setattr(receiver, 'text', data),
+        accept=str)
+
+See the documentation for the two functions for details.
 
 ## Fine-tuning gesture recognition
 
@@ -119,17 +155,10 @@ phone use:
   recognizer to e.g. ui.Label produces no results.
 * It can be hard to add gestures to ui.ScrollView, ui.TextView and the like,
   because they have complex multi-view structures and gestures already in
-  place.
-  
-## Versions:
-    
-* 1.1 - Adds distance parameters to swipe gestures.
-* 1.0 - First version released to PyPi. 
-  Breaks backwards compatibility in syntax, adds multi-recognizer coordination,
-  and removes force press support.
+  place.  
 """
 
-__version__ = '1.1'
+__version__ = '1.2'
 
 import ctypes
 import functools
@@ -190,17 +219,13 @@ EDGE_BOTTOM = 4
 EDGE_RIGHT = 8
 EDGE_ALL = 15
 
-# Cross-app drop accepted input identifiers
-
-DROP_TEXT = NSString
-DROP_IMAGE = UIImage
-
 
 class Data():
     """
     Simple class that contains all the data about the gesture. See the Usage
     section and individual gestures for information on the data included. 
     Also provides convenience state-specific properties (`began` etc.).
+    (docgen-ignore)
     """
     
     def __init__(self):
@@ -253,6 +278,7 @@ class Data():
             
             
 class ObjCPlus:
+    """ docgen-ignore """
     
     def __new__(cls, *args, **kwargs):
         objc_class = getattr(cls, '_objc_class', None)
@@ -306,14 +332,15 @@ class ObjCPlus:
         
 class ObjCDelegate(ObjCPlus):
     """ If you inherit from this class, the class name must match the delegate 
-    protocol name. """
+    protocol name. (docgen-ignore) """
             
             
-def is_objc_type(objc_instance, objc_class):
+def _is_objc_type(objc_instance, objc_class):
     return objc_instance.isKindOfClass_(objc_class.ptr)
 
 
 class UIGestureRecognizerDelegate(ObjCDelegate):
+    """ docgen-ignore """
     
     def __init__(self, recognizer_class, view, handler_func):
         self.view = view
@@ -345,15 +372,15 @@ class UIGestureRecognizerDelegate(ObjCDelegate):
         data.number_of_touches = recognizer.numberOfTouches()
         
         if (is_objc_type(recognizer, UIPanGestureRecognizer) or 
-        is_objc_type(recognizer, UIScreenEdgePanGestureRecognizer)):
+        _is_objc_type(recognizer, UIScreenEdgePanGestureRecognizer)):
             trans = recognizer.translationInView_(ObjCInstance(view))
             vel = recognizer.velocityInView_(ObjCInstance(view))
             data.translation = ui.Point(trans.x, trans.y)
             data.velocity = ui.Point(vel.x, vel.y)
-        elif is_objc_type(recognizer, UIPinchGestureRecognizer):
+        elif _is_objc_type(recognizer, UIPinchGestureRecognizer):
             data.scale = recognizer.scale()
             data.velocity = recognizer.velocity()
-        elif is_objc_type(recognizer, UIRotationGestureRecognizer):
+        elif _is_objc_type(recognizer, UIRotationGestureRecognizer):
             data.rotation = recognizer.rotation()
             data.velocity = recognizer.velocity()
     
@@ -380,197 +407,8 @@ class UIGestureRecognizerDelegate(ObjCDelegate):
         self.other_recognizers.append(other.recognizer)
         self.recognizer.delegate = self
 
-drag_and_drop_prefix = 'py_object_'
-
-def to_pyobject(item):
-    item = ObjCInstance(item)
-    try:
-        data = item.localObject()
-        if data is None: return None
-        if not str(data).startswith(drag_and_drop_prefix):
-            return None
-        address_str = str(data)[len(drag_and_drop_prefix):]
-        address = int(address_str)
-        result = ctypes.cast(address, ctypes.py_object).value
-        return result
-    except Exception as e:
-        return None
-
-
-class UIDragInteractionDelegate(ObjCDelegate):
-    
-    def __init__(self, view, data, allow_others):
-        if not callable(data):
-            data = functools.partial(lambda d, sender: d, data)
-        self.data = { 'payload_func': data }
-        self.view = view
-        view.touch_enabled = True
-        draginteraction = UIDragInteraction.alloc().initWithDelegate_(self)
-        draginteraction.setEnabled(True)
-        draginteraction.setAllowsSimultaneousRecognitionDuringLift_(allow_others)
-        view.objc_instance.addInteraction(draginteraction)
-            
-        retain_global(self)
-    
-    def dragInteraction_itemsForBeginningSession_(_self, _cmd,
-    _interaction, _session):
-        self = ObjCInstance(_self)
-        session = ObjCInstance(_session)
-        payload = self.data['payload_func'](self.view)
-        # Retain reference to potentially ephemeral data
         
-        self.content_actual = {
-            'payload': payload,
-            'sender': self.view
-        }
-        
-        external_payload = ''
-        
-        if type(payload) is str:
-            external_payload = payload
-        elif type(payload) in [ui.Image]:
-            external_payload = ObjCInstance(payload)
-        provider = NSItemProvider.alloc().initWithObject(external_payload)
-        item = UIDragItem.alloc().initWithItemProvider(provider)
-        item.setLocalObject_(
-            str(drag_and_drop_prefix) +  
-            str(id(self.content_actual)))
-        object_array = NSArray.arrayWithObject(item)
-        return object_array.ptr
-   
-
-class UIDropInteractionDelegate(ObjCDelegate):
-    
-    def __init__(self, view, handler_func, accept=None):
-        self.accept_type = None
-        if type(accept) is type:
-            if accept is str:
-                self.accept_type = NSString
-            elif accept is ui.Image:
-                self.accept_type = UIImage
-            accept = functools.partial(
-                lambda dtype, d, s, r: type(d) is dtype, accept)
-        self.functions = {
-            'handler': handler_func,
-            'accept': accept
-        }
-        self.view = view
-        view.touch_enabled = True
-        
-        dropinteraction = UIDropInteraction.alloc().initWithDelegate_(self)
-        view.objc_instance.addInteraction(dropinteraction)
-        retain_global(self)
-        
-    def dropInteraction_canHandleSession_(_self, _cmd, _interaction, _session):
-        return True
-        '''
-        session = ObjCInstance(_session)
-        for item in session.items():
-            if not to_pyobject(item) is None:
-                return True
-        return False
-        '''
-        
-    def dropInteraction_sessionDidUpdate_(_self, _cmd, _interaction, _session):
-        self = ObjCInstance(_self)
-        session = ObjCInstance(_session)
-        proposal = 2 # UIDropOperationCopy
-        accept_func = self.functions['accept']
-
-        if session.localDragSession():
-            if accept_func is not None:
-                for item in session.items():
-                    data = to_pyobject(item)
-                    payload = data['payload']
-                    sender = data['sender']
-                    if not accept_func(payload, sender, self.view):
-                        proposal = 1 # UIDropOperationForbidden
-        else:
-            if (self.accept_type is None or
-            not session.canLoadObjectsOfClass(self.accept_type)):
-                    proposal = 1 # UIDropOperationForbidden
-
-        return UIDropProposal.alloc().initWithDropOperation(proposal).ptr
-        
-    def dropInteraction_performDrop_(_self, _cmd, _interaction, _session):
-        self = ObjCInstance(_self)
-        session = ObjCInstance(_session)
-        handler = self.functions['handler']
-        
-        if session.localDragSession():
-            for item in session.items():
-                data = to_pyobject(item)
-                payload = data['payload']
-                sender = data['sender']
-                handler(payload, sender, self.view)
-        else:
-            if self.accept_type is not None:
-                
-                def completion_handler(_cmd, _object, _error):
-                    obj = ObjCInstance(_object)
-                    payload = None
-                    if is_objc_type(obj, NSString):
-                        payload = str(obj)
-                    elif is_objc_type(obj, UIImage):
-                        payload = ui.Image.from_data(uiimage_to_png(obj))
-                    handler(payload, None, self.view)
-                handler_block = ObjCBlock(
-                    completion_handler, restype=None,
-                    argtypes=[c_void_p, c_void_p, c_void_p])
-                retain_global(handler_block)
-                
-                for item in session.items():
-                    provider = item.itemProvider()
-                    provider.loadObjectOfClass_completionHandler_(
-                        self.accept_type, handler_block)
-                    break
-                    
-        
-@on_main_thread
-def drag(view, payload, allow_others=False):
-    """ Sets the `view` to be the sender in a drag and drop operation. Dragging
-    starts with a long press.
-    
-    For within-app drag and drop, `payload` can be anything, and it is passed
-    by reference.
-    
-    If the `payload` is a text string or a `ui.Image`, it can be dragged
-    (copied) to another app (on iPad).
-    There is also built-in support for dropping text to any `ui.TextField` or
-    `ui.TextView`. 
-    
-    If `payload` is a function, it is called at the time when the drag starts.
-    The function receives one argument, the sending `view`, and must return the
-    data to be dragged.
-
-    Additional parameters:
-
-    * `allow_others` - Set to True if other gestures attached to the view
-    should be prioritized over the dragging.
-    """
-    
-    UIDragInteractionDelegate(view, payload, allow_others)
-    
-@on_main_thread
-def drop(view, action, accept=None):
-    """ Sets the `view` as a drop target. `action` function is called with
-    three arguments:
-        
-    * `data` - The dragged data.
-    * `sender` - Source view of the drag and drop. `None` for drags between
-    apps.
-    * `receiver` - Same as `view`.
-    
-    Additional parameters:
-
-    * `accept` - Control which data will be accepted for dropping.
-    Either an accepted type like `dict` or `ui.Image`, or a function
-    that is called when a drag enters the view. Function gets same parameters
-    as the main handler, and should return False if the view should not accept
-    the drop.
-    """
-    
-    UIDropInteractionDelegate(view, action, accept)
+#docgen: Gestures
 
 @on_main_thread
 def tap(view, action, 
@@ -768,6 +606,9 @@ def swipe(view, action,
 
     return handler
 
+
+#docgen: Gesture management
+
 @on_main_thread
 def disable(handler):
     """ Disable a recognizer temporarily. """
@@ -815,6 +656,209 @@ def replace_close_gesture(view, recognizer_class):
         target, sel('dismiss:')).autorelease()
     view.addGestureRecognizer_(recognizer)
     return recognizer
+
+
+# Drag and drop delegates
+
+drag_and_drop_prefix = 'py_object_'
+
+def _to_pyobject(item):
+    item = ObjCInstance(item)
+    try:
+        data = item.localObject()
+        if data is None: return None
+        if not str(data).startswith(drag_and_drop_prefix):
+            return None
+        address_str = str(data)[len(drag_and_drop_prefix):]
+        address = int(address_str)
+        result = ctypes.cast(address, ctypes.py_object).value
+        return result
+    except Exception as e:
+        return None
+
+
+class UIDragInteractionDelegate(ObjCDelegate):
+    """ docgen-ignore """
+    
+    def __init__(self, view, data, allow_others):
+        if not callable(data):
+            data = functools.partial(lambda d, sender: d, data)
+        self.data = { 'payload_func': data }
+        self.view = view
+        view.touch_enabled = True
+        draginteraction = UIDragInteraction.alloc().initWithDelegate_(self)
+        draginteraction.setEnabled(True)
+        draginteraction.setAllowsSimultaneousRecognitionDuringLift_(allow_others)
+        view.objc_instance.addInteraction(draginteraction)
+            
+        retain_global(self)
+    
+    def dragInteraction_itemsForBeginningSession_(_self, _cmd,
+    _interaction, _session):
+        self = ObjCInstance(_self)
+        session = ObjCInstance(_session)
+        payload = self.data['payload_func'](self.view)
+        # Retain reference to potentially ephemeral data
+        
+        self.content_actual = {
+            'payload': payload,
+            'sender': self.view
+        }
+        
+        external_payload = ''
+        
+        if type(payload) is str:
+            external_payload = payload
+        elif type(payload) in [ui.Image]:
+            external_payload = ObjCInstance(payload)
+        provider = NSItemProvider.alloc().initWithObject(external_payload)
+        item = UIDragItem.alloc().initWithItemProvider(provider)
+        item.setLocalObject_(
+            str(drag_and_drop_prefix) +  
+            str(id(self.content_actual)))
+        object_array = NSArray.arrayWithObject(item)
+        return object_array.ptr
+   
+
+class UIDropInteractionDelegate(ObjCDelegate):
+    """ docgen-ignore """
+    
+    def __init__(self, view, handler_func, accept=None):
+        self.accept_type = None
+        if type(accept) is type:
+            if accept is str:
+                self.accept_type = NSString
+            elif accept is ui.Image:
+                self.accept_type = UIImage
+            accept = functools.partial(
+                lambda dtype, d, s, r: type(d) is dtype, accept)
+        self.functions = {
+            'handler': handler_func,
+            'accept': accept
+        }
+        self.view = view
+        view.touch_enabled = True
+        
+        dropinteraction = UIDropInteraction.alloc().initWithDelegate_(self)
+        view.objc_instance.addInteraction(dropinteraction)
+        retain_global(self)
+        
+    def dropInteraction_canHandleSession_(_self, _cmd, _interaction, _session):
+        return True
+        
+    def dropInteraction_sessionDidUpdate_(_self, _cmd, _interaction, _session):
+        self = ObjCInstance(_self)
+        session = ObjCInstance(_session)
+        proposal = 2 # UIDropOperationCopy
+        accept_func = self.functions['accept']
+
+        if session.localDragSession():
+            if accept_func is not None:
+                for item in session.items():
+                    data = _to_pyobject(item)
+                    payload = data['payload']
+                    sender = data['sender']
+                    if not accept_func(payload, sender, self.view):
+                        proposal = 1 # UIDropOperationForbidden
+        else:
+            if (self.accept_type is None or
+            not session.canLoadObjectsOfClass(self.accept_type)):
+                    proposal = 1 # UIDropOperationForbidden
+
+        return UIDropProposal.alloc().initWithDropOperation(proposal).ptr
+        
+    def dropInteraction_performDrop_(_self, _cmd, _interaction, _session):
+        self = ObjCInstance(_self)
+        session = ObjCInstance(_session)
+        handler = self.functions['handler']
+        
+        if session.localDragSession():
+            for item in session.items():
+                data = _to_pyobject(item)
+                payload = data['payload']
+                sender = data['sender']
+                handler(payload, sender, self.view)
+        else:
+            if self.accept_type is not None:
+                
+                def completion_handler(_cmd, _object, _error):
+                    obj = ObjCInstance(_object)
+                    payload = None
+                    if _is_objc_type(obj, NSString):
+                        payload = str(obj)
+                    elif _is_objc_type(obj, UIImage):
+                        payload = ui.Image.from_data(uiimage_to_png(obj))
+                    handler(payload, None, self.view)
+                handler_block = ObjCBlock(
+                    completion_handler, restype=None,
+                    argtypes=[c_void_p, c_void_p, c_void_p])
+                retain_global(handler_block)
+                
+                for item in session.items():
+                    provider = item.itemProvider()
+                    provider.loadObjectOfClass_completionHandler_(
+                        self.accept_type, handler_block)
+                    break
+
+#docgen: Drag and drop                                
+        
+@on_main_thread
+def drag(view, payload, allow_others=False):
+    """ Sets the `view` to be the sender in a drag and drop operation. Dragging
+    starts with a long press.
+    
+    For within-app drag and drop, `payload` can be anything, and it is passed
+    by reference.
+    
+    If the `payload` is a text string or a `ui.Image`, it can be dragged
+    (copied) to another app (on iPad).
+    There is also built-in support for dropping text to any `ui.TextField` or
+    `ui.TextView`. 
+    
+    If `payload` is a function, it is called at the time when the drag starts.
+    The function receives one argument, the sending `view`, and must return the
+    data to be dragged.
+
+    Additional parameters:
+
+    * `allow_others` - Set to True if other gestures attached to the view
+    should be prioritized over the dragging.
+    """
+    
+    UIDragInteractionDelegate(view, payload, allow_others)
+    
+@on_main_thread
+def drop(view, action, accept=None):
+    """ Sets the `view` as a drop target, calling the `action` function with
+    dropped data.
+    
+    Additional parameters:
+
+    * `accept` - Control which data will be accepted for dropping. Simplest
+    option is to provide an accepted Python type like `dict` or `ui.Label`.
+    
+      For cross-app drops, only two types are currently supported: `str` for
+      plain text, and `ui.Image` for images.
+      
+      For in-app drops, the `accept` argument can also be a function that will
+      be called when a drag enters the view. Function gets same parameters
+      as the main handler, and should return False if the view should not accept
+      the drop.
+    
+    `action` function has to have this signature:
+        
+        def handle_drop(data, sender, receiver):
+            ...
+            
+    Arguments of the `action` function are:
+            
+    * `data` - The dragged data.
+    * `sender` - Source view of the drag and drop. This is `None` for drags
+    between apps.
+    * `receiver` - Same as `view`.
+    """
+    
+    UIDropInteractionDelegate(view, action, accept)
 
 
 if __name__ == '__main__':
