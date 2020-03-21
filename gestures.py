@@ -371,7 +371,7 @@ class UIGestureRecognizerDelegate(ObjCDelegate):
         data.state = recognizer.state()
         data.number_of_touches = recognizer.numberOfTouches()
         
-        if (is_objc_type(recognizer, UIPanGestureRecognizer) or 
+        if (_is_objc_type(recognizer, UIPanGestureRecognizer) or 
         _is_objc_type(recognizer, UIScreenEdgePanGestureRecognizer)):
             trans = recognizer.translationInView_(ObjCInstance(view))
             vel = recognizer.velocityInView_(ObjCInstance(view))
