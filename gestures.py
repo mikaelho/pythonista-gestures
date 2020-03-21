@@ -444,6 +444,10 @@ class UIDropInteractionDelegate(ObjCDelegate):
     def __init__(self, view, handler_func, accept=None):
         
         if type(accept) is type:
+            if accept is str:
+                self.accept_type = NSString
+            elif accept is ui.Image:
+                self.accept_type = UIImage
             accept = functools.partial(
                 lambda dtype, d, s, r: type(d) is dtype, accept)
         self.functions = {
@@ -476,10 +480,15 @@ class UIDropInteractionDelegate(ObjCDelegate):
         if accept_func is not None:
             for item in session.items():
                 data = to_pyobject(item)
-                payload = data['payload']
-                sender = data['sender']
-                if not accept_func(payload, sender, self.view):
-                    proposal = 1 # UIDropOperationForbidden
+                if not data is None:
+                    payload = data['payload']
+                    sender = data['sender']
+                    if not accept_func(payload, sender, self.view):
+                        proposal = 1 # UIDropOperationForbidden
+                else:
+                    item_itemprovider = item.itemProvider()        
+                    if not itemProvider.canLoadObjectOfClass(self.accept_type):
+                        proposal = 1 # UIDropOperationForbidden
 
         return ObjCClass('UIDropProposal').alloc().initWithDropOperation(proposal).ptr
         
