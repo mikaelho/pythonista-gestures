@@ -756,6 +756,8 @@ class UIDropInteractionDelegate(ObjCDelegate):
                 self.accept_type = NSString
             elif accept is ui.Image:
                 self.accept_type = UIImage
+            elif accept is bytearray:
+                self.accept_type = NSData
             accept = functools.partial(
                 lambda dtype, d, s, r: type(d) is dtype, accept)
         self.functions = {
@@ -787,10 +789,13 @@ class UIDropInteractionDelegate(ObjCDelegate):
                     if not accept_func(payload, sender, self.view):
                         proposal = 1 # UIDropOperationForbidden
         else:
+            pass
+            '''
             if self.accept_type is None:
                 proposal = 1
             elif not session.canLoadObjectsOfClass(self.accept_type):
                     proposal = 1 # UIDropOperationForbidden
+            '''
 
         return UIDropProposal.alloc().initWithDropOperation(proposal).ptr
         
@@ -815,18 +820,33 @@ class UIDropInteractionDelegate(ObjCDelegate):
                         payload = str(obj)
                     elif _is_objc_type(obj, UIImage):
                         payload = ui.Image.from_data(uiimage_to_png(obj))
-                    handler(payload, None, self.view)
+                    elif _is_objc_type(obj, NSURL):
+                        file_url = str(obj)
+                    handler(file_url, None, self.view)
                 handler_block = ObjCBlock(
                     completion_handler, restype=None,
                     argtypes=[c_void_p, c_void_p, c_void_p])
                 retain_global(handler_block)
                 
                 for item in session.items():
+                    print('by item')
                     provider = item.itemProvider()
-                    print(provider.registeredTypeIdentifiers())
                     if provider.canLoadObjectOfClass(self.accept_type):
                         provider.loadObjectOfClass_completionHandler_(
                         self.accept_type, handler_block)
+                    elif self.accept_type is NSData:
+                        print('accepting')
+                        type_identifier = None
+                        suggested_name = None
+                        try:
+                            type_identifier = provider.registeredTypeIdentifiers()[0]
+                            suggested_name = provider.suggestedName()
+                        except: pass
+                        print(type_identifier, suggested_name)
+                        if type_identifier and suggested_name:
+                            provider.loadFileRepresentationForTypeIdentifier_completionHandler_(
+                                type_identifier, handler_block)
+
 
 #docgen: Drag and drop                                
         
@@ -1072,3 +1092,11 @@ if __name__ == '__main__':
         )
         
     drop(drop_image_l, image_dropped, accept=ui.Image)
+    
+    drop_file_l = create_label('Drop file')
+    
+    def file_dropped(data, sender, receiver):
+        print(data)
+        
+    drop(drop_file_l, file_dropped, accept=bytearray)
+        
