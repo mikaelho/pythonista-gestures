@@ -164,6 +164,7 @@ import ctypes
 import functools
 import inspect
 import os
+import os.path
 import types
 
 import ui
@@ -658,8 +659,26 @@ def replace_close_gesture(view, recognizer_class):
     return recognizer
 
 
-# Drag and drop delegates
+# Drag and drop delegates and helpers
 
+class File:
+    """ docgen-ignore """
+    
+    UTI = 'kUTTypeData'
+    
+    def __init__(self, path, mode='r', data=None):
+        self.path = path
+        self.filename = os.path.basename(path)
+        self.mode = mode
+        self._data = data
+    
+    @property    
+    def data(self):
+        if self._data is None:
+            with open(self.filename, self.mode) as fp:
+                self._data = fp.read()
+        return self._data
+        
 drag_and_drop_prefix = 'py_object_'
 
 def _to_pyobject(item):
@@ -697,28 +716,35 @@ class UIDragInteractionDelegate(ObjCDelegate):
     _interaction, _session):
         self = ObjCInstance(_self)
         session = ObjCInstance(_session)
-        payload = self.data['payload_func'](self.view)
-        # Retain reference to potentially ephemeral data
-        
+        payload = self.data['payload_func'](self.view)        
         self.content_actual = {
             'payload': payload,
             'sender': self.view
         }
         
         external_payload = ''
+        suggested_name = None
         
         if type(payload) is str:
             external_payload = payload
-        elif type(payload) in [ui.Image]:
+        elif type(payload) is ui.Image:
             external_payload = ObjCInstance(payload)
+            try:
+                suggested_name = os.path.basename(payload.name)
+            except: pass
+        elif type(payload) is File:
+            suggested_name = payload.filename
+            
         provider = NSItemProvider.alloc().initWithObject(external_payload)
+        if suggested_name:
+            provider.setSuggestedName_(suggested_name)
         item = UIDragItem.alloc().initWithItemProvider(provider)
         item.setLocalObject_(
             str(drag_and_drop_prefix) +  
             str(id(self.content_actual)))
         object_array = NSArray.arrayWithObject(item)
         return object_array.ptr
-   
+        
 
 class UIDropInteractionDelegate(ObjCDelegate):
     """ docgen-ignore """
@@ -761,8 +787,9 @@ class UIDropInteractionDelegate(ObjCDelegate):
                     if not accept_func(payload, sender, self.view):
                         proposal = 1 # UIDropOperationForbidden
         else:
-            if (self.accept_type is None or
-            not session.canLoadObjectsOfClass(self.accept_type)):
+            if self.accept_type is None:
+                proposal = 1
+            elif not session.canLoadObjectsOfClass(self.accept_type):
                     proposal = 1 # UIDropOperationForbidden
 
         return UIDropProposal.alloc().initWithDropOperation(proposal).ptr
@@ -796,9 +823,10 @@ class UIDropInteractionDelegate(ObjCDelegate):
                 
                 for item in session.items():
                     provider = item.itemProvider()
-                    provider.loadObjectOfClass_completionHandler_(
+                    print(provider.registeredTypeIdentifiers())
+                    if provider.canLoadObjectOfClass(self.accept_type):
+                        provider.loadObjectOfClass_completionHandler_(
                         self.accept_type, handler_block)
-                    break
 
 #docgen: Drag and drop                                
         
