@@ -377,6 +377,9 @@ class GestureMixin():
         g.end('tap')
         return
         
+      if g.is_active('pan'):
+        g.end('pan')
+        
       delta = g.translation
       if delta is not None:
         if abs(delta.x) > abs(delta.y):
@@ -618,6 +621,8 @@ if __name__ == '__main__':
       self.show_status(data, 'Pan', f'Translation: {data.translation}')
       if data.began:
         self.translate_track = [data.translation]
+      elif data.ended:
+        self.show_status(data, 'Pan', f'Ended')
       else:
         self.translate_track.append(data.translation)
       self.translate_track = self.translate_track[-20:]
@@ -735,6 +740,6 @@ if __name__ == '__main__':
       ui.animate(anim, 0.2)
       
   v = TestView()
-  v.present(title_bar_color='black')
+  v.present('fullscreen', title_bar_color='black')
   v.create_labels()
   
