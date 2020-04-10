@@ -22,8 +22,10 @@ with [stash](https://github.com/ywangd/stash).
 
 ## Versions:
 
-* 1.2 - Adds drag and drop support.  
-* 1.1 - Adds distance parameters to swipe gestures.
+* 1.3 - Add `first` to declare priority for the gesture, and an option to use
+  the fine-tuning methods with ObjC gesture recognizers.
+* 1.2 - Add drag and drop support.  
+* 1.1 - Add distance parameters to swipe gestures.
 * 1.0 - First version released to PyPi. 
   Breaks backwards compatibility in syntax, adds multi-recognizer coordination,
   and removes force press support.
@@ -62,6 +64,38 @@ All of the gesture-adding methods return an object that can be used
 to remove or disable the gesture as needed, see the API. You can also remove
 all gestures from a view with `remove_all_gestures(view)`.
 
+## Fine-tuning gesture recognition
+
+By default only one gesture recognizer will be successful.
+
+If you just want to say "this recognizer goes first", the returned object
+contains an easy method for that:
+    
+    doubletap(view, handler).first()
+
+You can set priorities between recognizers
+more specifically by using the `before` method of the returned object.
+For example, the following ensures that the swipe always has a chance to happen
+first:
+    
+    swipe(view, swipe_handler, direction=RIGHT).before(
+        pan(view, pan_handler)
+    )
+    
+(For your convenience, there is also an inverted `after` method.)
+
+You can also allow gestures to be recognized simultaneously using the
+`together_with` method. For example, the following enables simultaneous panning
+and zooming (pinching):
+    
+    panner = pan(view, pan_handler)
+    pincher = pinch(view, pinch_handler)
+    panner.together_with(pincher)
+    
+All of these methods (`before`, `after` and `together_with`) also accept an
+ObjCInstance of any gesture recognizer, if you need to fine-tune co-operation
+with the gestures of some built-in views.
+
 ## Drag and drop
 
 This module supports dragging and dropping both within a Pythonista app and
@@ -93,27 +127,6 @@ any Python object of any complexity, passed by reference:
 
 See the documentation for the two functions for details.
 
-## Fine-tuning gesture recognition
-
-By default only one gesture recognizer will be successful. You can prioritize
-one over the other by using the `before` method of the returned object.
-For example, the following ensures that the swipe always has a chance to happen
-first:
-    
-    panner = pan(view, pan_handler)
-    swiper = swipe(view, swipe_handler, direction=RIGHT)
-    swiper.before(panner)
-    
-(For your convenience, there is also a similar `after` method.)
-
-You can also allow gestures to be recognized simultaneously using the
-`together_with` method. For example, the following enables simultaneous panning
-and zooming (pinching):
-    
-    panner = pan(view, pan_handler)
-    pincher = pinch(view, pinch_handler)
-    panner.together_with(pincher)
-
 ## Using lambdas
 
 If there in existing method that you just want to trigger with a gesture,
@@ -123,7 +136,8 @@ need to worry with the state of the gesture.
 
     tap(label, lambda _: setattr(label, 'text', 'Tapped'))
 
-The example below triggers some kind of a database refresh when a long press is
+For continuous gestures, the example below triggers some kind of a hypothetical
+database refresh when a long press is
 detected on a button.
 Anything more complicated than this is probably worth creating a separate
 function.
@@ -149,7 +163,8 @@ phone use:
 
 ## Other details
  
-* Adding a gesture to a view automatically sets `touch_enabled=True` for that
+* Adding a gesture or a drag & drop handler to a view automatically sets 
+  `touch_enabled=True` for that
   view, to avoid counter-intuitive situations where adding a gesture
   recognizer to e.g. ui.Label produces no results.
 * It can be hard to add gestures to ui.ScrollView, ui.TextView and the like,
