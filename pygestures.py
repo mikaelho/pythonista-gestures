@@ -530,6 +530,18 @@ class ZoomPanView(GestureView):
     self._set_transforms()
     self.zoomer.center = self.bounds.center()
       
+  def zoom_to_fit(self):
+    bbox = ui.Rect(0,0,1,1)
+    zoomer = self.zoomer
+    for view in zoomer.subviews:
+      bbox = bbox.union(view.frame)
+    self.scale = min(
+      self.width/bbox.width,
+      self.height/bbox.height,
+    )
+    self._set_transforms()
+    zoomer.x = zoomer.y = 0
+      
   def _set_transforms(self):
       self.zoomer.transform = ui.Transform.scale(*(self.scale,)*2).concat(
         ui.Transform.rotation(math.radians(self.rotation))
